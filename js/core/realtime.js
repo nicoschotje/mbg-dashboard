@@ -93,6 +93,34 @@ function tiersRT() {
   AppState.emit('tiers:changed');
 }
 
+
+function paymentVerificationInsertRT(pv) {
+  // Bump the verifications badge in the sidebar (if present)
+  const badge = document.getElementById('badge-verifications');
+  if (badge) {
+    const next = (parseInt(badge.textContent, 10) || 0) + 1;
+    badge.textContent = String(next);
+    badge.classList.add('show');
+  }
+  // Flash the orders nav item — payment verifications live under orders
+  flashNavItem('orders');
+  // Status-specific toast
+  if (pv.status === 'verified') {
+    toast(`✓ Payment verified — Order ${pv.expected_reference || ''} (₱${pv.expected_amount || ''})`);
+  } else if (pv.status === 'mismatch') {
+    toast(`⚠ Payment mismatch — Order ${pv.expected_reference || ''} needs review`);
+  } else {
+    toast(`📎 Receipt uploaded — Order ${pv.expected_reference || ''} pending review`);
+  }
+  AppState.emit('payment_verification:insert', pv);
+  AppState.emit('kpis:dirty');
+}
+
+function paymentVerificationUpdateRT(pv) {
+  AppState.emit('payment_verification:update', pv);
+  AppState.emit('kpis:dirty');
+}
+
 /* ---------- subscribe / retry ---------- */
 
 function buildChannel(role) {
@@ -104,6 +132,13 @@ function buildChannel(role) {
        (payload) => newOrderRT(payload.new));
   ch.on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders' },
        (payload) => updOrderRT(payload.new));
+
+
+    // Payment verifications — always on (both owner and sales can see receipt alerts)
+    ch.on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'payment_verifications' },
+         (payload) => paymentVerificationInsertRT(payload.new));
+    ch.on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'payment_verifications' },
+         (payload) => paymentVerificationUpdateRT(payload.new));
 
   // Sales role: limited subscription (orders only) per §14.4
   if (role !== 'sales') {
