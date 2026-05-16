@@ -119,15 +119,20 @@ export async function tryLogin(pin, adminSecret) {
   }
 
   lockout.fails = 0;
+  // For owner role: if no explicit admin secret, use the PIN itself so that
+  // sha256(PIN) matches OWNER_PIN_HASH in is_admin() — enables all DB writes
+  // without the user having to fill in a separate "Admin secret" field.
+  const effectiveSecret = adminSecret || (role === 'owner' ? pin : '');
+
   // Reset client so admin secret header is in place for the real session
-  createSB(adminSecret || '');
+  createSB(effectiveSecret);
 
   const now = Date.now();
   const sess = {
     role,
     loginAt: now,
     expiresAt: now + ABS_EXPIRY_MS,
-    adminSecret: adminSecret || '',
+    adminSecret: effectiveSecret,
   };
   saveSession(sess);
   return { ok: true, role, session: sess };
