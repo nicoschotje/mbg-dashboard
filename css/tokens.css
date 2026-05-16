@@ -1,0 +1,38 @@
+/* MBG Design Tokens — extracted verbatim from blueprint §2 */
+:root {
+  /* Background */
+  --bg-base:      #070B0A;
+  --bg-card:      #0F1614;
+  --bg-hover:     #161E1C;
+
+  /* Brand */
+  --green:        #00C9A7;
+  --green-dim:    #007A66;
+  --orange:       #FF6B35;
+  --red:          #FF4757;
+  --yellow:       #FFD700;
+
+  /* Text */
+  --text-primary: #E8F5F0;
+  --text-muted:   #8FA89F;
+
+  /* Structure */
+  --border:       #1E2E2A;
+  --sidebar-w:    240px;
+  --header-h:     60px;
+
+  /* CRM tier colors */
+  --tier-1: #8FA89F;
+  --tier-2: #CD7F32;
+  --tier-3: #C0C0C0;
+  --tier-4: #FFD700;
+  --tier-5: #00D4FF;
+
+  /* Order status palette (blueprint §10.1) */
+  --st-pending-fg:   #FFD700;  --st-pending-bg:   #3D3300;
+  --st-confirmed-fg: #4A9EFF;  --st-confirmed-bg: #00204D;
+  --st-preparing-fg: #FF6B35;  --st-preparing-bg: #3D1500;
+  --st-out-fg:       #00C9A7;  --st-out-bg:       #003D32;
+  --st-completed-fg: #00C9A7;  --st-completed-bg: #003D32;
+  --st-cancelled-fg: #FF4757;  --st-cancelled-bg: #3D0008;
+}

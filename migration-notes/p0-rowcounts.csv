@@ -1,0 +1,74 @@
+table_name,exact_rows,bucket,notes
+active_sessions,9,active-auth,
+activity_log,139,active-audit,
+admin_config,1,active-auth,
+admin_sessions,0,active-auth,empty at snapshot
+announcements,3,active-business,
+auth_audit_log,314,active-audit,WORM
+banners,5,active-business,
+categories,4,active-business,
+cf_card_views,0,DROP-side-project,Cardforge
+cf_cards,1,DROP-side-project,Cardforge
+cf_orders,0,DROP-side-project,Cardforge
+cf_teams,0,DROP-side-project,Cardforge
+chat_history,0,DROP-side-project,AI / voice
+cms_blog_posts,0,DROP-empty-planned,
+cms_features,6,active-cms,
+cms_footer,3,active-cms,
+cms_hero,1,active-cms,
+cms_inquiries,0,DROP-empty-planned,
+cms_marquee_items,11,active-cms,
+cms_media,0,DROP-empty-planned,
+cms_media_library,0,DROP-empty-planned,
+cms_nav_links,7,active-cms,
+cms_pages,14,active-cms,
+cms_pillar_cards,4,active-cms,
+cms_pricing_plans,0,DROP-empty-planned,
+cms_products,0,DROP-empty-planned,
+cms_sections,7,active-cms,
+cms_site_settings,6,active-cms,
+cms_social_links,4,active-cms,
+cms_stat_cards,13,active-cms,
+cms_testimonials,3,active-cms,
+customer_data_exports,0,DROP-empty-planned,
+customer_remember_tokens,18,active-auth,RLS-on no-policy (service_role only — OK)
+customer_sessions,200,active-auth,
+customer_tiers,0,DROP-empty-planned,
+customer_webauthn_credentials,2,active-auth,2 enrolled passkeys
+customers,0,DROP-legacy,replaced by store_customers
+dashboard_settings,6,active-business,key/value store
+dashboard_totp,0,active-auth,newer 2FA mechanism
+delivery_zones,0,DROP-empty-planned,
+discount_codes,0,DROP-empty-planned,
+discount_rules,3,active-business,
+mbg_client_intelligence,208,active-crm,
+mbg_clients,410,active-crm,
+mbg_discounts,10,active-crm,
+mbg_import_log,0,active-crm,empty
+mbg_interactions,0,active-crm,empty
+mbg_order_enrichments,278,active-crm,
+mbg_orders,1236,active-crm,
+mbg_tier_history,0,active-crm,empty
+nl_budgets,0,DROP-side-project,Nicolife
+nl_expenses,0,DROP-side-project,Nicolife
+nl_goals,0,DROP-side-project,Nicolife
+nl_groceries,0,DROP-side-project,Nicolife
+nl_households,0,DROP-side-project,Nicolife
+nl_meals,0,DROP-side-project,Nicolife
+nl_pantry,0,DROP-side-project,Nicolife
+nl_profiles,0,DROP-side-project,Nicolife
+nl_recipes,0,DROP-side-project,Nicolife
+nl_workouts,0,DROP-side-project,Nicolife
+orders,278,active-business,dual columns (items/order_items + status/order_status)
+payment_sessions,0,DROP-empty-planned,
+payment_verifications,0,DROP-empty-planned,
+product_costs,0,DROP-empty-planned,RLS-on no-policy
+products,78,active-business,
+promo_codes,0,DROP-empty-planned,
+prompt_library,0,DROP-side-project,AI
+restock_notifications,0,DROP-empty-planned,
+store_customers,20,active-auth,
+store_settings,1,active-business,single-row
+telegram_users,3,active-auth,
+voice_transcriptions,0,DROP-side-project,AI
+webauthn_challenges,16,active-auth,

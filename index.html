@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#070B0A" />
+  <title>Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="./css/tokens.css" />
+  <link rel="stylesheet" href="./css/layout.css" />
+  <link rel="stylesheet" href="./css/components.css" />
+</head>
+<body>
+
+  <!-- Login overlay (PIN) -->
+  <div class="login-overlay" id="login-overlay">
+    <div class="card pin-card">
+      <h2 id="login-store-name">&nbsp;</h2>
+      <div class="sub">Enter PIN to unlock dashboard</div>
+      <input
+        id="pin-input"
+        class="input pin-input"
+        type="password"
+        inputmode="numeric"
+        autocomplete="off"
+        maxlength="6"
+        placeholder="••••••"
+      />
+      <input
+        id="admin-secret-input"
+        class="input"
+        type="password"
+        autocomplete="off"
+        placeholder="Admin secret (optional)"
+        style="margin-bottom:12px"
+      />
+      <div class="pin-error" id="pin-error"></div>
+      <button class="btn" id="pin-submit" style="width:100%">Unlock</button>
+      <div class="sub" style="margin-top:14px;font-size:11px">
+        Owner PIN: 6 digits · Sales PIN: 4 digits
+      </div>
+    </div>
+  </div>
+
+  <!-- Brand -->
+  <div class="brand">
+    <span class="dot"></span><span class="label" id="brand-name">&nbsp;</span>
+  </div>
+
+  <!-- Sidebar -->
+  <nav class="sidebar" id="sidebar">
+    <div class="nav-section-label">Surface</div>
+    <div class="nav-item active" data-surface="operations">
+      <span class="ico">⚡</span><span class="label">Operations</span>
+    </div>
+    <div class="nav-item" data-surface="content">
+      <span class="ico">📦</span><span class="label">Content</span>
+    </div>
+    <div class="nav-item" data-surface="intelligence">
+      <span class="ico">📊</span><span class="label">Intelligence</span>
+    </div>
+
+    <!-- Operations modules (Surface A nav group) -->
+    <div class="nav-group active" data-surface-group="operations">
+      <div class="nav-section-label">Operations</div>
+      <div class="nav-item active" data-module="orders">
+        <span class="ico">🧾</span><span class="label">Orders</span>
+        <span class="badge" id="badge-pending">0</span>
+      </div>
+      <div class="nav-item" data-module="inventory">
+        <span class="ico">📋</span><span class="label">Inventory</span>
+        <span class="badge" id="badge-low">0</span>
+      </div>
+      <div class="nav-item" data-module="customers">
+        <span class="ico">👥</span><span class="label">Customers</span>
+      </div>
+    </div>
+
+    <!-- Content modules (Surface B nav group). Distinct attribute
+         (data-cmodule) so Surface A's [data-module] handler ignores them. -->
+    <div class="nav-group" data-surface-group="content">
+      <div class="nav-section-label">Content</div>
+      <div class="nav-item active" data-cmodule="products">
+        <span class="ico">🛍️</span><span class="label">Products</span>
+      </div>
+      <div class="nav-item" data-cmodule="categories">
+        <span class="ico">🏷️</span><span class="label">Categories</span>
+      </div>
+      <div class="nav-item" data-cmodule="banners">
+        <span class="ico">🖼️</span><span class="label">Banners</span>
+      </div>
+      <div class="nav-item" data-cmodule="announcements">
+        <span class="ico">📣</span><span class="label">Announcements</span>
+      </div>
+      <div class="nav-item" data-cmodule="discounts">
+        <span class="ico">🎟️</span><span class="label">Discounts</span>
+      </div>
+      <div class="nav-item" data-cmodule="settings">
+        <span class="ico">⚙️</span><span class="label">Settings</span>
+      </div>
+    </div>
+
+    <!-- Intelligence modules (Surface C nav group). Distinct attribute
+         (data-imodule) so Surfaces A and B handlers ignore them. -->
+    <div class="nav-group" data-surface-group="intelligence">
+      <div class="nav-section-label">Intelligence</div>
+      <div class="nav-item active" data-imodule="analytics">
+        <span class="ico">📈</span><span class="label">Analytics</span>
+      </div>
+      <div class="nav-item" data-imodule="intelligence">
+        <span class="ico">🧠</span><span class="label">MBG Clients</span>
+      </div>
+      <div class="nav-item" data-imodule="access-pins">
+        <span class="ico">🔐</span><span class="label">Access PINs</span>
+      </div>
+      <div class="nav-item" data-imodule="reports">
+        <span class="ico">📄</span><span class="label">Reports</span>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Header -->
+  <header class="header">
+    <h1 id="header-title">Operations · Orders</h1>
+    <div class="header-meta">
+      <span id="rt-status">●  connecting…</span>
+      <span class="role-pill" id="role-pill">—</span>
+      <button class="lock" id="lock-btn">Lock</button>
+    </div>
+  </header>
+
+  <!-- Main -->
+  <main class="main" id="main">
+    <!-- Surface A: Operations -->
+    <div class="surface active" id="surface-operations">
+      <div class="kpi-grid" id="kpi-grid">
+        <div class="kpi"><div class="kpi-label">Revenue Today</div><div class="kpi-value" id="kpi-revenue">₱0</div><div class="kpi-sub" id="kpi-revenue-sub">— orders</div></div>
+        <div class="kpi"><div class="kpi-label">Pending Orders</div><div class="kpi-value" id="kpi-pending">0</div><div class="kpi-sub">awaiting confirmation</div></div>
+        <div class="kpi"><div class="kpi-label">Low Stock</div><div class="kpi-value" id="kpi-low">0</div><div class="kpi-sub">products at/below threshold</div></div>
+        <div class="kpi"><div class="kpi-label">Customers Today</div><div class="kpi-value" id="kpi-cust">0</div><div class="kpi-sub">unique phones</div></div>
+      </div>
+      <section class="module-pane active" id="pane-orders"></section>
+      <section class="module-pane" id="pane-inventory"></section>
+      <section class="module-pane" id="pane-customers"></section>
+    </div>
+
+    <!-- Surface B: Content -->
+    <div class="surface" id="surface-content">
+      <section class="module-pane active" id="pane-products"></section>
+      <section class="module-pane" id="pane-categories"></section>
+      <section class="module-pane" id="pane-banners"></section>
+      <section class="module-pane" id="pane-announcements"></section>
+      <section class="module-pane" id="pane-discounts"></section>
+      <section class="module-pane" id="pane-settings"></section>
+    </div>
+
+    <!-- Surface C: Intelligence -->
+    <div class="surface" id="surface-intelligence">
+      <section class="module-pane active" id="pane-analytics"></section>
+      <section class="module-pane" id="pane-intelligence"></section>
+      <section class="module-pane" id="pane-access-pins"></section>
+      <section class="module-pane" id="pane-reports"></section>
+    </div>
+  </main>
+
+  <!-- Modal mount -->
+  <div class="modal-backdrop" id="modal-backdrop">
+    <div class="modal" id="modal-body"></div>
+  </div>
+
+  <!-- Toasts -->
+  <div id="toast-container"></div>
+
+  <!-- Audio -->
+  <audio id="order-audio" src="./sounds/order-notify.mp3" preload="auto"></audio>
+
+  <!-- Supabase SDK (matches blueprint v2.45.4) -->
+  <script>window.__MBG_SUPA_KEY__ = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imlobm5pcHlucGR0Y2JkZmJwZW1xIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg4NDIwNjcsImV4cCI6MjA5NDQxODA2N30.RgSQY_odbIR0vdfGqcdN0aTDyKlBcbrDC35iAKSGRKo';</script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+
+  <!-- Bootstrap -->
+  <script type="module" src="./js/main.js"></script>
+</body>
+</html>

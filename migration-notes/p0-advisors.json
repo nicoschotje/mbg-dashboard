@@ -1,0 +1,87 @@
+{
+  "project_id": "ckmnhgattkiziuykhczo",
+  "captured_at_utc": "2026-05-15",
+  "source": "Mini-advisor — SQL queries against pg_catalog (a substitute for the raw Supabase get_advisors output which was 139KB security + 288KB performance, too large to ingest in one read).",
+  "raw_supabase_advisor_paths": {
+    "security": "/var/folders/rx/4d6m38qs2_x4fg95j7k3ymfm0000gr/T/.../mcp-...-get_advisors-1778836735759.txt",
+    "performance": "/var/folders/rx/4d6m38qs2_x4fg95j7k3ymfm0000gr/T/.../mcp-...-get_advisors-1778836741148.txt",
+    "note": "Both raw files are on the host; not portable. Mini-advisor below recreates the substantive findings from pg_catalog and is reproducible from any session."
+  },
+  "summary_counts": {
+    "tables_with_rls_disabled": 0,
+    "tables_with_rls_on_but_no_policy": 2,
+    "unindexed_foreign_keys": 11,
+    "security_definer_functions_in_public": 34,
+    "tables_without_primary_key": 0
+  },
+  "rls_no_policy_offenders": [
+    {
+      "table": "public.customer_remember_tokens",
+      "rows": 18,
+      "verdict": "OK — RLS-on / no-policy is functionally service-role-only access. Skill says auth-RPC writes this table. Migrate as-is."
+    },
+    {
+      "table": "public.product_costs",
+      "rows": 0,
+      "verdict": "OK — empty, planned but unused. Drop in clean rebuild or carry as locked-down."
+    }
+  ],
+  "unindexed_foreign_keys": [
+    {
+      "table": "public.nl_expenses",
+      "constraint": "nl_expenses_created_by_fkey",
+      "drop_on_rebuild": true,
+      "reason": "Nicolife side-project — does not migrate to mrbeanies-prod"
+    },
+    {"table": "public.nl_goals",      "constraint": "nl_goals_created_by_fkey",      "drop_on_rebuild": true, "reason": "Nicolife"},
+    {"table": "public.nl_groceries",  "constraint": "nl_groceries_created_by_fkey",  "drop_on_rebuild": true, "reason": "Nicolife"},
+    {"table": "public.nl_meals",      "constraint": "nl_meals_created_by_fkey",      "drop_on_rebuild": true, "reason": "Nicolife"},
+    {"table": "public.nl_recipes",    "constraint": "nl_recipes_created_by_fkey",    "drop_on_rebuild": true, "reason": "Nicolife"},
+    {"table": "public.nl_workouts",   "constraint": "nl_workouts_created_by_fkey",   "drop_on_rebuild": true, "reason": "Nicolife"},
+    {
+      "table": "public.payment_sessions",
+      "constraint": "payment_sessions_order_id_fkey",
+      "drop_on_rebuild": false,
+      "fix": "CREATE INDEX ON public.payment_sessions(order_id);",
+      "reason": "Planned MBG payments table — index FK to orders."
+    },
+    {
+      "table": "public.product_costs",
+      "constraint": "product_costs_product_id_fkey",
+      "drop_on_rebuild": "optional",
+      "fix": "CREATE INDEX ON public.product_costs(product_id);  -- only if keeping the table",
+      "reason": "Empty MBG planned table."
+    },
+    {
+      "table": "public.products",
+      "constraint": "products_category_id_fkey",
+      "drop_on_rebuild": false,
+      "fix": "CREATE INDEX ON public.products(category_id);",
+      "reason": "ACTIVE — hot read path on storefront category filter. Add this index on rebuild."
+    },
+    {
+      "table": "public.voice_transcriptions",
+      "constraint": "voice_transcriptions_saved_to_prompt_id_fkey",
+      "drop_on_rebuild": true,
+      "reason": "AI side-project — does not migrate"
+    },
+    {
+      "table": "public.webauthn_challenges",
+      "constraint": "webauthn_challenges_customer_id_fkey",
+      "drop_on_rebuild": false,
+      "fix": "CREATE INDEX ON public.webauthn_challenges(customer_id);",
+      "reason": "Active passkey auth. Indexed FK = faster cleanup_expired_auth_data sweeps."
+    }
+  ],
+  "actionable_indexes_for_rebuild": [
+    "CREATE INDEX ON public.products(category_id);",
+    "CREATE INDEX ON public.payment_sessions(order_id);",
+    "CREATE INDEX ON public.webauthn_challenges(customer_id);",
+    "CREATE INDEX ON public.product_costs(product_id);  -- only if table is kept"
+  ],
+  "security_definer_review": {
+    "count_in_public": 34,
+    "verdict": "EXPECTED — Skill §4.3 lists the RPC catalog (place_customer_order, verify_customer_pin, is_admin, etc.). Re-review each on port to mrbeanies-prod and confirm search_path is locked (SET search_path = public, pg_temp).",
+    "common_gotcha": "SECURITY DEFINER functions with mutable search_path are CVE-class — verify each function header on port."
+  }
+}
