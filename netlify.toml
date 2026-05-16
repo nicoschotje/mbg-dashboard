@@ -32,3 +32,8 @@
   for = "/index.html"
   [headers.values]
     Cache-Control = "no-cache, must-revalidate"
+
+[[headers]]
+  for = "/js2/*"
+  [headers.values]
+    Cache-Control = "public, max-age=3600, must-revalidate"
