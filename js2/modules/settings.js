@@ -110,7 +110,21 @@ function render() {
         </div>
       </div>
       <label class="field-label" style="margin-top:10px">Address</label>
-      <textarea class="input" id="p-addr" rows="2">${escapeHTML(s.store_address || '')}</textarea>
+      <div style="position:relative">
+        <textarea class="input" id="p-addr" rows="2">${escapeHTML(s.store_address || '')}</textarea>
+        <div id="p-geo-results" class="geo-results" hidden></div>
+      </div>
+      <div class="field-row" style="margin-top:8px;align-items:flex-end">
+        <div style="flex:1 1 120px">
+          <label class="field-label">Latitude</label>
+          <input class="input" id="p-lat" type="number" step="any" value="${s.store_lat ?? ''}"/>
+        </div>
+        <div style="flex:1 1 120px">
+          <label class="field-label">Longitude</label>
+          <input class="input" id="p-lng" type="number" step="any" value="${s.store_lng ?? ''}"/>
+        </div>
+        <button class="btn btn-ghost btn-sm" id="p-geo-btn" type="button">Find coordinates</button>
+      </div>
 
       <label class="field-label" style="margin-top:10px">Logo</label>
       <div style="display:flex;gap:10px;align-items:center">
@@ -384,10 +398,69 @@ function tiersHTML() {
   `).join('');
 }
 
+/* ---------- Geocoding (OpenStreetMap Nominatim) ---------- */
+
+async function geocodePH(query) {
+  const url = new URL('https://nominatim.openstreetmap.org/search');
+  url.searchParams.set('q', query);
+  url.searchParams.set('format', 'json');
+  url.searchParams.set('limit', '5');
+  url.searchParams.set('countrycodes', 'ph');
+  const res = await fetch(url.toString());
+  const results = await res.json();
+  return (results || []).map(r => ({
+    display: r.display_name,
+    lat: parseFloat(r.lat),
+    lng: parseFloat(r.lon),
+  }));
+}
+
+function bindStoreGeocoding() {
+  const addrEl    = paneEl.querySelector('#p-addr');
+  const latEl     = paneEl.querySelector('#p-lat');
+  const lngEl     = paneEl.querySelector('#p-lng');
+  const resultsEl = paneEl.querySelector('#p-geo-results');
+  const btnEl     = paneEl.querySelector('#p-geo-btn');
+
+  async function runSearch() {
+    const q = addrEl.value.trim();
+    if (q.length < 5) { resultsEl.hidden = true; return; }
+    let results = [];
+    try { results = await geocodePH(q); } catch (_) { results = []; }
+    if (!results.length) {
+      resultsEl.innerHTML = `<div class="geo-result" style="color:var(--text-muted)">No matches found.</div>`;
+      resultsEl.hidden = false;
+      return;
+    }
+    resultsEl.innerHTML = results.map((r, i) =>
+      `<div class="geo-result" data-i="${i}">${escapeHTML(r.display)}</div>`).join('');
+    resultsEl.hidden = false;
+    resultsEl.querySelectorAll('.geo-result[data-i]').forEach(el => {
+      el.addEventListener('click', () => {
+        const r = results[Number(el.dataset.i)];
+        addrEl.value = r.display;
+        latEl.value  = r.lat;
+        lngEl.value  = r.lng;
+        resultsEl.hidden = true;
+      });
+    });
+  }
+
+  let timer;
+  addrEl.addEventListener('input', () => {
+    clearTimeout(timer);
+    timer = setTimeout(runSearch, 400);
+  });
+  btnEl.addEventListener('click', runSearch);
+  addrEl.addEventListener('blur', () => setTimeout(() => { resultsEl.hidden = true; }, 200));
+}
+
 /* ---------- Handlers ---------- */
 
 function bindHandlers() {
   paneEl.querySelector('#s-refresh').addEventListener('click', async () => { await loadAll(); render(); });
+
+  bindStoreGeocoding();
 
   // Logo upload
   paneEl.querySelector('#p-logo').addEventListener('change', async (e) => {
@@ -412,6 +485,8 @@ function bindHandlers() {
         store_phone:   paneEl.querySelector('#p-phone').value.trim() || null,
         store_email:   paneEl.querySelector('#p-email').value.trim() || null,
         store_address: paneEl.querySelector('#p-addr').value.trim() || null,
+        store_lat: parseFloat(paneEl.querySelector('#p-lat').value) || null,
+        store_lng: parseFloat(paneEl.querySelector('#p-lng').value) || null,
         store_logo_url: paneEl.querySelector('#p-logo-url').value || null,
       });
       toast('Profile saved'); await loadAll();
