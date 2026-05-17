@@ -17,6 +17,7 @@ let paneEl = null;
 const state = {
   settings: null,        // store_settings row
   zones: [],             // delivery_zones rows
+  tiers: [],             // tier_config rows
 };
 
 async function loadAll() {
@@ -38,6 +39,11 @@ async function loadAll() {
     .from('delivery_zones').select('*').order('sort_order', { ascending: true });
   if (zErr) toastError('Zones load failed: ' + zErr.message);
   state.zones = zones || [];
+
+  const { data: tiers, error: tErr } = await sb
+    .from('tier_config').select('*').order('tier_level', { ascending: false });
+  if (tErr) toastError('Tier config load failed: ' + tErr.message);
+  state.tiers = tiers || [];
 }
 
 /* ---------- store_settings save (§11.6 upsert pattern) ---------- */
@@ -236,6 +242,15 @@ function render() {
       <button class="btn btn-sm" id="n-save" style="margin-top:10px">Save notifications</button>
     </div>
 
+    <!-- Customer Tiers -->
+    <div class="card" style="margin-bottom:14px">
+      <h3 style="margin:0 0 10px;font-family:'Syne',sans-serif">Customer Tiers</h3>
+      <p style="color:var(--text-muted);font-size:13px;margin:0 0 12px">
+        Tiers are assigned automatically based on customer lifetime spend (₱).
+      </p>
+      <div id="tier-list">${tiersHTML()}</div>
+    </div>
+
     <!-- PIN management -->
     <div class="card" style="margin-bottom:14px">
       <h3 style="margin:0 0 10px;font-family:'Syne',sans-serif">PIN Management</h3>
@@ -273,6 +288,20 @@ function zonesHTML() {
       <span style="flex:1;font-size:13px">${escapeHTML(z.name)}</span>
       <span style="font-family:'JetBrains Mono',monospace;font-size:13px">₱${z.base_fee ?? 0}</span>
       <button class="btn btn-sm btn-danger" data-zn-del>Delete</button>
+    </div>
+  `).join('');
+}
+
+function tiersHTML() {
+  if (!state.tiers.length) return `<div class="empty" style="padding:14px">No tiers configured.</div>`;
+  return state.tiers.map(t => `
+    <div data-tier-level="${t.tier_level}" style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px dashed var(--border);flex-wrap:wrap">
+      <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text-muted);width:18px">L${t.tier_level}</span>
+      <input class="input tc-icon" value="${escapeHTML(t.icon || '')}" maxlength="4" placeholder="Icon" style="flex:0 0 56px;text-align:center"/>
+      <input class="input tc-name" value="${escapeHTML(t.name || '')}" placeholder="Name" style="flex:1 1 110px"/>
+      <input class="input tc-spend" type="number" min="0" step="0.01" value="${t.min_spend ?? 0}" placeholder="Min ₱" style="flex:1 1 100px"/>
+      <input class="tc-color" type="color" value="${escapeHTML(t.color || '#888888')}" style="flex:0 0 40px;height:34px;padding:2px;border:1px solid var(--border);border-radius:6px;background:var(--bg-base)"/>
+      <button class="btn btn-sm tc-save">Save</button>
     </div>
   `).join('');
 }
@@ -384,6 +413,33 @@ function bindHandlers() {
       if (error) return toastError(error.message);
       toast('Zone deleted');
       await loadAll(); render();
+    });
+  });
+
+  // Customer Tiers
+  paneEl.querySelectorAll('.tc-save').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const row = btn.closest('[data-tier-level]');
+      if (!row) return;
+      const level = parseInt(row.dataset.tierLevel, 10);
+      const name = row.querySelector('.tc-name').value.trim();
+      if (!name) return toastWarn('Tier name required.');
+      const spend = parseFloat(row.querySelector('.tc-spend').value);
+      if (Number.isNaN(spend) || spend < 0) return toastWarn('Min spend must be a non-negative number.');
+      btn.disabled = true;
+      const sb = getSB();
+      const { error } = await sb.from('tier_config').upsert({
+        tier_level: level,
+        name,
+        icon:  row.querySelector('.tc-icon').value.trim() || null,
+        min_spend: spend,
+        color: row.querySelector('.tc-color').value,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'tier_level' });
+      btn.disabled = false;
+      if (error) return toastError(error.message);
+      toast(`Tier "${name}" saved.`);
+      await loadAll();
     });
   });
 
