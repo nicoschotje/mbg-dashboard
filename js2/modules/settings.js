@@ -84,6 +84,8 @@ function render() {
   const s = state.settings || {};
   const hours = s.operating_hours || { open: '08:00', close: '22:00', days: [0,1,2,3,4,5,6] };
   const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const accent = s.theme_color || '#00C9A7';
+  const themeMode = localStorage.getItem('mbg-theme-mode') || 'dark';
 
   paneEl.innerHTML = `
     <div class="filter-row">
@@ -273,6 +275,22 @@ function render() {
       </p>
       <div id="tier-list">${tiersHTML()}</div>
       <button class="btn btn-sm" id="tier-save" style="margin-top:10px">Save tiers</button>
+    </div>
+
+    <!-- Appearance -->
+    <div class="card" style="margin-bottom:14px">
+      <h3 style="margin:0 0 10px;font-family:'Syne',sans-serif">Appearance</h3>
+      <label class="field-label">Accent colour</label>
+      <div style="display:flex;align-items:center;gap:10px">
+        <input type="color" id="ap-accent" value="${escapeHTML(accent)}" style="width:48px;height:34px;padding:2px;border:1px solid var(--border);border-radius:6px;background:var(--bg-base)"/>
+        <span id="ap-accent-hex" style="font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--text-muted)">${escapeHTML(accent)}</span>
+      </div>
+      <label class="field-label" style="margin-top:12px">Theme mode</label>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-sm ap-mode ${themeMode === 'dark' ? '' : 'btn-ghost'}" data-mode="dark">🌙 Dark</button>
+        <button class="btn btn-sm ap-mode ${themeMode === 'light' ? '' : 'btn-ghost'}" data-mode="light">☀️ Light</button>
+      </div>
+      <button class="btn btn-sm" id="ap-save" style="margin-top:14px">Save appearance</button>
     </div>
 
     <!-- PIN management -->
@@ -573,6 +591,28 @@ function bindHandlers() {
       status.textContent = e.message || 'Send failed';
       status.style.color = 'var(--red)';
     }
+  });
+
+  // Appearance — accent colour live preview + theme mode toggle
+  const accentInput = paneEl.querySelector('#ap-accent');
+  accentInput.addEventListener('input', () => {
+    document.documentElement.style.setProperty('--green', accentInput.value);
+    paneEl.querySelector('#ap-accent-hex').textContent = accentInput.value;
+  });
+  paneEl.querySelectorAll('.ap-mode').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const mode = btn.dataset.mode;
+      document.documentElement.dataset.theme = mode;
+      localStorage.setItem('mbg-theme-mode', mode);
+      paneEl.querySelectorAll('.ap-mode').forEach(b =>
+        b.classList.toggle('btn-ghost', b.dataset.mode !== mode));
+    });
+  });
+  paneEl.querySelector('#ap-save').addEventListener('click', async () => {
+    try {
+      await saveSettings({ theme_color: accentInput.value });
+      toast('Appearance saved'); await loadAll();
+    } catch (e) { toastError(e.message); }
   });
 
   // PIN updates (§8.1, §11.8 dashboard_settings upsert)
