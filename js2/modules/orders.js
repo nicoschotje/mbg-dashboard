@@ -170,11 +170,14 @@ async function notifyCustomer(order, newStatus) {
   const sb = getSB();
   const { error } = await sb.functions.invoke('notify-customer', {
     body: {
-      telegram_chat_id: order.telegram_chat_id,
+      // Edge fn `notify-customer` destructures { order_id, new_status, custom_message }.
+      // Sending `status` / `message` made it 400 silently — customers received nothing.
       order_id: order.id,
-      status: newStatus,
+      new_status: newStatus,
+      custom_message: message,
+      // Kept for parity; edge fn ignores unknown keys.
+      telegram_chat_id: order.telegram_chat_id,
       customer_name: order.customer_name || '',
-      message,
     },
   });
   if (error) throw error;
