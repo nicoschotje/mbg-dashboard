@@ -19,6 +19,7 @@ const state = {
   settings: null,        // store_settings row
   zones: [],             // delivery_zones rows
   tiers: [],             // tier definitions (dashboard_settings TIER_CONFIG)
+  storeOpenOverride: '', // dashboard_settings store_open_override: '' | 'true' | 'false'
 };
 
 const DEFAULT_TIERS = [
@@ -59,6 +60,12 @@ async function loadAll() {
   state.tiers = (Array.isArray(parsedTiers) && parsedTiers.length)
     ? parsedTiers.slice().sort((a, b) => (b.tier_level || 0) - (a.tier_level || 0))
     : DEFAULT_TIERS.slice();
+
+  // Manual open/closed override (§3.8) — so the Hours card can show the
+  // current setting instead of always defaulting to "follow auto schedule".
+  const { data: ovrRow } = await sb
+    .from('dashboard_settings').select('value').eq('key', 'store_open_override').maybeSingle();
+  state.storeOpenOverride = ovrRow?.value ?? '';
 }
 
 /* ---------- store_settings save (§11.6 upsert pattern) ---------- */
@@ -252,9 +259,9 @@ function render() {
         <div style="flex:1 1 220px">
           <label class="field-label">Manual override</label>
           <select class="input" id="h-override">
-            <option value="">— follow auto schedule —</option>
-            <option value="true">Force OPEN</option>
-            <option value="false">Force CLOSED</option>
+            <option value=""     ${state.storeOpenOverride === ''     ? 'selected' : ''}>— follow auto schedule —</option>
+            <option value="true" ${state.storeOpenOverride === 'true'  ? 'selected' : ''}>Force OPEN</option>
+            <option value="false"${state.storeOpenOverride === 'false' ? 'selected' : ''}>Force CLOSED</option>
           </select>
         </div>
       </div>
