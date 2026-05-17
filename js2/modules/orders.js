@@ -17,7 +17,7 @@ let modalBody = null;
 const filterState = {
   status: 'all',          // all | pending | confirmed | preparing | out_for_delivery | completed | cancelled
   dateRange: 'today',     // today | yesterday | week | all | custom
-  payment: 'all',         // all | cod | gcash | bank | crypto
+  payment: 'all',         // all | gcash | maya | bank_transfer | usdt | cod
   search: '',
   customStart: null,
   customEnd: null,
@@ -137,12 +137,12 @@ function buildStatusMessage(order, newStatus) {
   const name    = order.customer_name || 'there';
   const sid     = shortId(order.id);
   const total   = formatCurrency(order.total);
-  const payment = order.payment_method || 'COD';
+  const payment = order.payment_method || '';
   const store   = AppState.settings?.store_name || "Mr. Beanie's Greenies";
 
   if (newStatus === 'confirmed') {
     return `Hi ${name}! Your order #${sid} has been confirmed.\n` +
-           `Total: ${total} via ${payment}.\n` +
+           `Total: ${total}${payment ? ' via ' + payment : ''}.\n` +
            `We'll notify you when it's being prepared. Thank you! 🌿`;
   }
   if (newStatus === 'out_for_delivery') {
@@ -346,10 +346,11 @@ function buildPane() {
       </select>
       <select class="input" id="orders-payment">
         <option value="all">All payments</option>
-        <option value="cod">COD</option>
         <option value="gcash">GCash</option>
-        <option value="bank">Bank</option>
-        <option value="crypto">Crypto</option>
+        <option value="maya">Maya</option>
+        <option value="bank_transfer">Bank transfer</option>
+        <option value="usdt">USDT</option>
+        <option value="cod">COD (legacy)</option>
       </select>
       <button class="btn btn-ghost btn-sm" id="orders-refresh">Refresh</button>
     </div>
