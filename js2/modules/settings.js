@@ -253,7 +253,11 @@ function render() {
           <input class="input" id="n-chat" value="${escapeHTML(s.telegram_chat_id || '')}"/>
         </div>
       </div>
-      <button class="btn btn-sm" id="n-save" style="margin-top:10px">Save notifications</button>
+      <div class="field-row" style="margin-top:10px;align-items:center">
+        <button class="btn btn-sm" id="n-save">Save notifications</button>
+        <button class="btn btn-sm btn-ghost" id="n-test">Send test alert</button>
+        <span id="n-status" style="color:var(--text-muted);font-size:12px"></span>
+      </div>
     </div>
 
     <!-- Tier Configuration -->
@@ -501,6 +505,42 @@ function bindHandlers() {
       });
       toast('Notifications saved'); await loadAll();
     } catch (e) { toastError(e.message); }
+  });
+
+  // Telegram test alert — sends directly via the Bot API using the
+  // values currently in the form, so it can be verified before saving.
+  paneEl.querySelector('#n-test').addEventListener('click', async () => {
+    const token  = paneEl.querySelector('#n-token').value.trim();
+    const chatId = paneEl.querySelector('#n-chat').value.trim();
+    const status = paneEl.querySelector('#n-status');
+    if (!token || !chatId) {
+      status.textContent = 'Enter bot token and chat ID first.';
+      status.style.color = 'var(--orange)';
+      return;
+    }
+    status.textContent = 'Sending…'; status.style.color = 'var(--text-muted)';
+    try {
+      const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: '✅ Test alert from MBG Dashboard',
+          disable_web_page_preview: true,
+        }),
+      });
+      const j = await res.json();
+      if (j.ok) {
+        status.textContent = 'Test sent — check Telegram.';
+        status.style.color = 'var(--green)';
+      } else {
+        status.textContent = `Telegram error: ${j.description || 'unknown'}`;
+        status.style.color = 'var(--red)';
+      }
+    } catch (e) {
+      status.textContent = e.message || 'Send failed';
+      status.style.color = 'var(--red)';
+    }
   });
 
   // PIN updates (§8.1, §11.8 dashboard_settings upsert)
