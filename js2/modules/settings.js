@@ -17,8 +17,16 @@ let paneEl = null;
 const state = {
   settings: null,        // store_settings row
   zones: [],             // delivery_zones rows
-  tiers: [],             // tier_config rows
+  tiers: [],             // tier definitions (dashboard_settings TIER_CONFIG)
 };
+
+const DEFAULT_TIERS = [
+  { tier_level: 5, name: 'Diamond',  icon: '💎', color: '#9B59B6', min_spend: 10000 },
+  { tier_level: 4, name: 'Gold',     icon: '🥇', color: '#F39C12', min_spend: 5000  },
+  { tier_level: 3, name: 'Silver',   icon: '🥈', color: '#95A5A6', min_spend: 2000  },
+  { tier_level: 2, name: 'Bronze',   icon: '🥉', color: '#E67E22', min_spend: 500   },
+  { tier_level: 1, name: 'Seedling', icon: '🌱', color: '#27AE60', min_spend: 0     },
+];
 
 async function loadAll() {
   const sb = getSB();
@@ -40,10 +48,16 @@ async function loadAll() {
   if (zErr) toastError('Zones load failed: ' + zErr.message);
   state.zones = zones || [];
 
-  const { data: tiers, error: tErr } = await sb
-    .from('tier_config').select('*').order('tier_level', { ascending: false });
+  const { data: tierRow, error: tErr } = await sb
+    .from('dashboard_settings').select('value').eq('key', 'TIER_CONFIG').maybeSingle();
   if (tErr) toastError('Tier config load failed: ' + tErr.message);
-  state.tiers = tiers || [];
+  let parsedTiers = null;
+  if (tierRow?.value) {
+    try { parsedTiers = JSON.parse(tierRow.value); } catch (_) { parsedTiers = null; }
+  }
+  state.tiers = (Array.isArray(parsedTiers) && parsedTiers.length)
+    ? parsedTiers.slice().sort((a, b) => (b.tier_level || 0) - (a.tier_level || 0))
+    : DEFAULT_TIERS.slice();
 }
 
 /* ---------- store_settings save (§11.6 upsert pattern) ---------- */
@@ -242,13 +256,14 @@ function render() {
       <button class="btn btn-sm" id="n-save" style="margin-top:10px">Save notifications</button>
     </div>
 
-    <!-- Customer Tiers -->
+    <!-- Tier Configuration -->
     <div class="card" style="margin-bottom:14px">
-      <h3 style="margin:0 0 10px;font-family:'Syne',sans-serif">Customer Tiers</h3>
+      <h3 style="margin:0 0 10px;font-family:'Syne',sans-serif">Tier Configuration</h3>
       <p style="color:var(--text-muted);font-size:13px;margin:0 0 12px">
         Tiers are assigned automatically based on customer lifetime spend (₱).
       </p>
       <div id="tier-list">${tiersHTML()}</div>
+      <button class="btn btn-sm" id="tier-save" style="margin-top:10px">Save tiers</button>
     </div>
 
     <!-- PIN management -->
@@ -301,7 +316,6 @@ function tiersHTML() {
       <input class="input tc-name" value="${escapeHTML(t.name || '')}" placeholder="Name" style="flex:1 1 110px"/>
       <input class="input tc-spend" type="number" min="0" step="0.01" value="${t.min_spend ?? 0}" placeholder="Min ₱" style="flex:1 1 100px"/>
       <input class="tc-color" type="color" value="${escapeHTML(t.color || '#888888')}" style="flex:0 0 40px;height:34px;padding:2px;border:1px solid var(--border);border-radius:6px;background:var(--bg-base)"/>
-      <button class="btn btn-sm tc-save">Save</button>
     </div>
   `).join('');
 }
@@ -416,31 +430,36 @@ function bindHandlers() {
     });
   });
 
-  // Customer Tiers
-  paneEl.querySelectorAll('.tc-save').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const row = btn.closest('[data-tier-level]');
-      if (!row) return;
+  // Tier configuration
+  paneEl.querySelector('#tier-save').addEventListener('click', async () => {
+    const btn = paneEl.querySelector('#tier-save');
+    const rows = [...paneEl.querySelectorAll('#tier-list [data-tier-level]')];
+    const tiers = [];
+    for (const row of rows) {
       const level = parseInt(row.dataset.tierLevel, 10);
       const name = row.querySelector('.tc-name').value.trim();
-      if (!name) return toastWarn('Tier name required.');
+      if (!name) return toastWarn(`Tier L${level}: name required.`);
       const spend = parseFloat(row.querySelector('.tc-spend').value);
-      if (Number.isNaN(spend) || spend < 0) return toastWarn('Min spend must be a non-negative number.');
-      btn.disabled = true;
-      const sb = getSB();
-      const { error } = await sb.from('tier_config').upsert({
+      if (Number.isNaN(spend) || spend < 0) return toastWarn(`Tier L${level}: min spend must be a non-negative number.`);
+      tiers.push({
         tier_level: level,
         name,
         icon:  row.querySelector('.tc-icon').value.trim() || null,
         min_spend: spend,
         color: row.querySelector('.tc-color').value,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'tier_level' });
-      btn.disabled = false;
-      if (error) return toastError(error.message);
-      toast(`Tier "${name}" saved.`);
-      await loadAll();
-    });
+      });
+    }
+    btn.disabled = true;
+    const sb = getSB();
+    const { error } = await sb.from('dashboard_settings').upsert({
+      key: 'TIER_CONFIG',
+      value: JSON.stringify(tiers),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'key' });
+    btn.disabled = false;
+    if (error) return toastError(error.message);
+    toast('Tiers saved.');
+    await loadAll();
   });
 
   // Hours
