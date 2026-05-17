@@ -135,6 +135,9 @@ lockBtn.addEventListener('click', () => {
   showLogin('Locked.');
 });
 
+// Apply saved theme mode (device-local display preference)
+document.documentElement.dataset.theme = localStorage.getItem('mbg-theme-mode') || 'dark';
+
 // Paint defaults immediately so the brand never flashes blank
 applyBranding();
 
