@@ -13,6 +13,7 @@ import { uploadStoreLogo, uploadQR } from '../core/storage.js';
 
 let mounted = false;
 let paneEl = null;
+let rateTimer = null;
 
 const state = {
   settings: null,        // store_settings row
@@ -169,7 +170,11 @@ function render() {
           </select>
         </div>
       </div>
-      <div id="pm-rate" style="color:var(--text-muted);font-size:12px;margin-top:8px">USDT/PHP rate: <span id="pm-rate-val">—</span> <button class="btn btn-ghost btn-sm" id="pm-rate-fetch">Fetch live</button></div>
+      <div id="pm-rate" style="color:var(--text-muted);font-size:12px;margin-top:8px">
+        USDT/PHP rate: <span id="pm-rate-val">…</span>
+        <span id="pm-rate-time" style="margin-left:6px"></span>
+        <button class="btn btn-ghost btn-sm" id="pm-rate-fetch">Refresh now</button>
+      </div>
 
       <button class="btn btn-sm" id="pm-save" style="margin-top:14px">Save payment</button>
     </div>
@@ -298,6 +303,43 @@ function render() {
   `;
 
   bindHandlers();
+  startRateAutoRefresh();
+}
+
+/* ---------- USDT live rate ---------- */
+
+async function fetchUSDTPHPRate() {
+  try {
+    const res = await fetch(
+      'https://api.coingecko.com/api/v3/simple/price?ids=tether&vs_currencies=php',
+      { cache: 'no-store' }
+    );
+    const data = await res.json();
+    return data?.tether?.php ?? null;
+  } catch (_) { return null; }
+}
+
+async function updateUSDTRate() {
+  if (!paneEl?.querySelector('#pm-rate-val')) return;
+  const rate = await fetchUSDTPHPRate();
+  // The pane may have been re-rendered while the request was in flight.
+  const valEl  = paneEl?.querySelector('#pm-rate-val');
+  const timeEl = paneEl?.querySelector('#pm-rate-time');
+  if (!valEl) return;
+  valEl.textContent = rate != null
+    ? '₱' + rate.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : 'unavailable';
+  if (timeEl) {
+    timeEl.textContent = rate != null
+      ? `(updated ${new Date().toLocaleTimeString('en-PH')})`
+      : '';
+  }
+}
+
+function startRateAutoRefresh() {
+  if (rateTimer) clearInterval(rateTimer);
+  updateUSDTRate();
+  rateTimer = setInterval(updateUSDTRate, 60_000);
 }
 
 function zonesHTML() {
@@ -383,18 +425,8 @@ function bindHandlers() {
     } catch (e) { toastError(e.message); }
   });
 
-  // CoinGecko rate (§10.6)
-  paneEl.querySelector('#pm-rate-fetch').addEventListener('click', async () => {
-    const out = paneEl.querySelector('#pm-rate-val');
-    out.textContent = '…';
-    try {
-      const r = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=tether&vs_currencies=php');
-      const j = await r.json();
-      out.textContent = '₱' + (j.tether?.php ?? '—');
-    } catch (e) {
-      out.textContent = 'fetch failed';
-    }
-  });
+  // CoinGecko rate (§10.6) — manual refresh + 60s auto-refresh
+  paneEl.querySelector('#pm-rate-fetch').addEventListener('click', updateUSDTRate);
 
   // Delivery save
   paneEl.querySelector('#d-save').addEventListener('click', async () => {
@@ -638,4 +670,8 @@ export async function mount(rootPaneEl) {
   if (!mounted) mounted = true;
   await loadAll();
   render();
+}
+
+export function unmount() {
+  if (rateTimer) { clearInterval(rateTimer); rateTimer = null; }
 }
