@@ -35,7 +35,7 @@ async function loadRestocks() {
   const { data, error } = await sb
     .from('restock_notifications')
     .select('*, products(name, stock_qty)')
-    .eq('notified', false)
+    .is('notified_at', null)
     .order('created_at', { ascending: true });
   if (error) return;
   state.pendingRestocks = data || [];
@@ -113,8 +113,8 @@ function renderRestocks() {
   const grouped = {};
   state.pendingRestocks.forEach(n => {
     const k = n.product_id || 'unknown';
-    if (!grouped[k]) grouped[k] = { product_id: k, name: n.product_name || n.products?.name || 'Unknown', stock: n.products?.stock_qty || 0, customers: [] };
-    grouped[k].customers.push({ name: n.customer_name, phone: n.customer_phone });
+    if (!grouped[k]) grouped[k] = { product_id: k, name: n.products?.name || n.name || 'Unknown', stock: n.products?.stock_qty || 0, customers: [] };
+    grouped[k].customers.push({ contact: n.contact, type: n.contact_type });
   });
   const list = Object.values(grouped);
 
@@ -170,9 +170,9 @@ async function updateField(productId, field, value) {
 async function notifyAll(productId) {
   const sb = getSB();
   const { error } = await sb.from('restock_notifications')
-    .update({ notified: true, notified_at: new Date().toISOString() })
+    .update({ notified_at: new Date().toISOString() })
     .eq('product_id', productId)
-    .eq('notified', false);
+    .is('notified_at', null);
   if (error) { toastError(error.message); return; }
   toast('Marked all waiting customers as notified.');
   await loadRestocks();
