@@ -33,7 +33,11 @@
   [headers.values]
     Cache-Control = "no-cache, must-revalidate"
 
+# JS modules are unhashed (buildless SPA) and imported by fixed paths, so a
+# long max-age serves stale code after a deploy. no-cache keeps the file
+# cached but forces revalidation every load — Netlify returns 304 when
+# unchanged, and fresh JS the moment a deploy lands.
 [[headers]]
   for = "/js2/*"
   [headers.values]
-    Cache-Control = "public, max-age=3600, must-revalidate"
+    Cache-Control = "no-cache"
