@@ -1,7 +1,8 @@
 // Bootstrap — login → realtime → Surface A (Operations)
 
 import { tryLogin, getSession, clearSession, startIdleTimer } from './core/auth.js';
-import { createSB } from './core/supabase.js';
+import { createSB, getSB } from './core/supabase.js';
+import { AppState } from './core/state.js';
 import { subscribeRealtime, unsubscribeRealtime } from './core/realtime.js';
 import { toast, toastError } from './core/toast.js';
 import { loadStoreSettings, applyBranding } from './core/settings.js';
@@ -13,6 +14,38 @@ const pinSubmit = document.getElementById('pin-submit');
 const pinErr = document.getElementById('pin-error');
 const lockBtn = document.getElementById('lock-btn');
 const rolePill = document.getElementById('role-pill');
+const storeToggle = document.getElementById('store-toggle');
+
+// Header store open/close toggle — reflects store_settings.is_open
+function renderStoreToggle() {
+  const isOpen = AppState.settings?.is_open !== false;
+  storeToggle.classList.toggle('open', isOpen);
+  storeToggle.classList.toggle('closed', !isOpen);
+  storeToggle.textContent = isOpen ? '●  OPEN' : '●  CLOSED';
+}
+
+storeToggle.addEventListener('click', async () => {
+  const isOpen = AppState.settings?.is_open !== false;
+  const next = !isOpen;
+  const msg = next
+    ? 'Open the store? Customers will be able to shop.'
+    : 'Close the store? Customers will see a closed screen.';
+  if (!confirm(msg)) return;
+  try {
+    const sb = getSB();
+    const { error } = await sb
+      .from('store_settings')
+      .update({ is_open: next, store_online: next, updated_at: new Date().toISOString() })
+      .eq('id', AppState.settings.id);
+    if (error) throw error;
+    AppState.settings.is_open = next;
+    AppState.settings.store_online = next;
+    renderStoreToggle();
+    toast(next ? 'Store opened.' : 'Store closed.');
+  } catch (e) {
+    toastError(e.message);
+  }
+});
 
 function showLogin(message) {
   document.querySelectorAll('.nav-item[data-surface]').forEach(n => { n.style.display = ''; }); wireSurfaceRouter._done = false; overlay.classList.remove('hidden');
@@ -32,6 +65,7 @@ async function handleLogin(role, session) {
 
   // Load store branding/config — owner may have rebranded since last session
   await loadStoreSettings();
+  renderStoreToggle();
 
   // Subscribe to realtime — sales gets limited subscription
   subscribeRealtime(role);
