@@ -132,56 +132,33 @@ function render() {
 
 /* ---------- Telegram notify (§5.2, §10.1, §10.9) ---------- */
 
-// §10.9 message templates per status. Returns null for statuses without a
-// customer-facing template (e.g. 'preparing' is internal kitchen state).
-function buildStatusMessage(order, newStatus) {
-  const name    = order.customer_name || 'there';
-  const sid     = shortId(order.id);
-  const total   = formatCurrency(order.total);
-  const payment = order.payment_method || '';
-  const store   = AppState.settings?.store_name || "Mr. Beanie's Greenies";
+// Customer-facing message per status. `pending` is the initial state and has
+// no entry, so no notification fires on order creation.
+const STATUS_MESSAGES = {
+  confirmed:        'Your order and payment has been confirmed. We will be preparing it shortly.',
+  preparing:        'Your order is ready. We will be booking your rider shortly.',
+  out_for_delivery: 'Your order has been picked up and is now on its way to you. Please keep your line open for when your rider arrives and contacts you.',
+  completed:        'Your order has now been delivered. Enjoy your smoke! 🌿',
+  cancelled:        'Your order has been cancelled. Please contact us if you have any questions.',
+};
 
-  if (newStatus === 'confirmed') {
-    return `Hi ${name}! Your order #${sid} has been confirmed.\n` +
-           `Total: ${total}${payment ? ' via ' + payment : ''}.\n` +
-           `We'll notify you when it's being prepared. Thank you! 🌿`;
-  }
-  if (newStatus === 'out_for_delivery') {
-    return `Hi ${name}! Your order #${sid} is now out for delivery!\n` +
-           `Rider is on the way. Please be ready. 🛵`;
-  }
-  if (newStatus === 'completed') {
-    return `Hi ${name}! Your order #${sid} has been delivered.\n` +
-           `Thank you for choosing ${store}! 🌱`;
-  }
-  if (newStatus === 'cancelled') {
-    return `Hi ${name}, your order #${sid} has been cancelled.\n` +
-           `If this was unexpected, please contact us. Sorry for the inconvenience.`;
-  }
-  return null;
+// POSTs a Telegram DM via the notify-customer edge function. Both `message`
+// and `custom_message` carry the same text so the call works regardless of
+// which key the edge function reads; `new_status` is included for status
+// changes. The x-admin-secret header is attached globally by the SB client.
+async function sendTelegram(orderId, message, newStatus) {
+  const body = { order_id: orderId, message, custom_message: message };
+  if (newStatus) body.new_status = newStatus;
+  const { error } = await getSB().functions.invoke('notify-customer', { body });
+  if (error) throw error;
 }
 
-// Fire-and-forget Telegram notify. Failure is non-blocking — surfaces as a
-// warning toast but never blocks or reverts the status advance.
+// Fire-and-forget status notification. Failure is non-blocking — surfaces as
+// a warning toast but never blocks or reverts the status change.
 async function notifyCustomer(order, newStatus) {
-  if (!order?.telegram_chat_id) return;            // §10.1: gate on chat ID
-  const message = buildStatusMessage(order, newStatus);
+  const message = STATUS_MESSAGES[newStatus];
   if (!message) return;                            // no template → skip
-
-  const sb = getSB();
-  const { error } = await sb.functions.invoke('notify-customer', {
-    body: {
-      // Edge fn `notify-customer` destructures { order_id, new_status, custom_message }.
-      // Sending `status` / `message` made it 400 silently — customers received nothing.
-      order_id: order.id,
-      new_status: newStatus,
-      custom_message: message,
-      // Kept for parity; edge fn ignores unknown keys.
-      telegram_chat_id: order.telegram_chat_id,
-      customer_name: order.customer_name || '',
-    },
-  });
-  if (error) throw error;
+  await sendTelegram(order.id, message, newStatus);
 }
 
 /* ---------- Mutations (blueprint §11.2) ---------- */
@@ -197,11 +174,11 @@ async function quickSetStatus(orderId, newStatus) {
   if (error) { toastError(error.message); return false; }
   toast(`Order ${shortId(orderId)} → ${STATUS_LABELS[newStatus] || newStatus}`);
 
-  // §10.1: after status update, call notify-customer if chat ID present.
-  // Run asynchronously so a failed/slow edge function never blocks the UI.
-  if (order?.telegram_chat_id) {
-    notifyCustomer(order, newStatus).catch(err => {
-      toastWarn(`Telegram notify failed: ${err?.message || err}`);
+  // §10.1: after every status update, notify the customer. Run asynchronously
+  // so a failed/slow edge function never blocks or reverts the status change.
+  if (order) {
+    notifyCustomer(order, newStatus).catch(() => {
+      toastWarn('Status updated. Telegram notification failed.');
     });
   }
 
