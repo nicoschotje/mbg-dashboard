@@ -216,8 +216,40 @@ async function markVerified(order) {
     .eq('id', order.id);
   if (error) { toastError(error.message); return; }
   toast(`Payment verified: #${shortId(order.id)}`);
+
+  // Non-blocking: the verification has already been committed.
+  sendTelegram(order.id, 'Your payment has been verified. Thank you!')
+    .catch(() => toastWarn('Payment verified. Telegram notification failed.'));
+
   await loadOrders();
   render();
+}
+
+// Deletes the receipt image from the `payment-receipts` storage bucket and
+// clears receipt_url on the order. The storage path is the segment of the
+// public receipt_url after the bucket name.
+async function deleteReceipt(order) {
+  if (!confirm('Delete this receipt image? This cannot be undone.')) return false;
+  const sb = getSB();
+
+  const url    = order.receipt_url || '';
+  const marker = '/payment-receipts/';
+  const idx    = url.indexOf(marker);
+  const path   = (idx >= 0 ? url.slice(idx + marker.length) : url.split('/').pop() || '')
+                  .split('?')[0];
+
+  const { error: rmErr } = await sb.storage.from('payment-receipts').remove([path]);
+  if (rmErr) { toastError('Failed to delete: ' + rmErr.message); return false; }
+
+  const { error: updErr } = await sb.from('orders')
+    .update({ receipt_url: null, updated_at: new Date().toISOString() })
+    .eq('id', order.id);
+  if (updErr) { toastError('Failed to delete: ' + updErr.message); return false; }
+
+  toast('Receipt deleted');
+  await loadOrders();
+  render();
+  return true;
 }
 
 /* ---------- Detail modal ---------- */
@@ -258,6 +290,7 @@ function paymentReceiptHTML(order) {
            style="display:inline-block;margin-top:6px;font-size:13px;color:var(--green)">View full size</a>
       ` : `<div style="color:var(--text-muted);font-size:13px">No receipt uploaded</div>`}
       ${showVerify ? `<div style="margin-top:10px"><button class="btn btn-sm" data-d-action="verify">Mark as Verified</button></div>` : ''}
+      ${verified && hasReceipt ? `<div style="margin-top:10px"><button class="btn btn-sm btn-ghost" data-d-action="delete-receipt" style="border:1px solid var(--red);color:var(--red)">🗑 Delete Receipt</button></div>` : ''}
     </div>
   `;
 }
@@ -329,6 +362,14 @@ function openDetail(order) {
         const fresh = AppState.orders.find(o => o.id === order.id);
         if (fresh) openDetail(fresh);
         else modalBackdrop.classList.remove('show');
+      }
+      if (action === 'delete-receipt') {
+        const ok = await deleteReceipt(order);
+        if (ok) {
+          const fresh = AppState.orders.find(o => o.id === order.id);
+          if (fresh) openDetail(fresh);
+          else modalBackdrop.classList.remove('show');
+        }
       }
     });
   });
