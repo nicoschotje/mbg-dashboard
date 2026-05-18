@@ -19,6 +19,15 @@ const state = {
   zones: [],             // delivery_zones rows
 };
 
+const SURGE_VALUES = [1, 1.5, 2, 2.5, 3];
+
+function surgePillStyle(active) {
+  const base = 'padding:7px 14px;border-radius:999px;cursor:pointer;font-family:inherit;font-size:13px;font-weight:600;';
+  return active
+    ? base + 'background:var(--green);color:#fff;border:1px solid var(--green)'
+    : base + 'background:var(--bg-base);color:var(--text-muted);border:1px solid var(--border)';
+}
+
 async function loadAll() {
   const sb = getSB();
 
@@ -171,6 +180,19 @@ function render() {
           <input class="input" id="d-minorder" type="number" min="0" step="0.01" value="${s.min_order_amount ?? 0}"/>
         </div>
       </div>
+
+      <div style="margin-top:14px">
+        <label class="field-label">Surge Multiplier</label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px">
+          <div id="surge-pills" style="display:flex;gap:8px;flex-wrap:wrap">
+            ${SURGE_VALUES.map(v => `
+              <button type="button" class="surge-pill" data-surge="${v}" style="${surgePillStyle(Number(s.delivery_rate_multiplier ?? 1) === v)}">×${v}</button>
+            `).join('')}
+          </div>
+          <span id="surge-saved" style="display:none;color:#27AE60;font-size:13px;font-weight:600">Saved ✓</span>
+        </div>
+      </div>
+
       <button class="btn btn-sm" id="d-save" style="margin-top:10px">Save delivery</button>
 
       <div style="font-weight:600;margin:18px 0 6px">Zones</div>
@@ -347,6 +369,25 @@ function bindHandlers() {
     } catch (e) {
       out.textContent = 'fetch failed';
     }
+  });
+
+  // Surge multiplier — click a pill to save immediately (no Save button)
+  let surgeSavedTimer = null;
+  paneEl.querySelectorAll('.surge-pill').forEach(pill => {
+    pill.addEventListener('click', async () => {
+      const value = Number(pill.dataset.surge);
+      try {
+        await saveSettings({ delivery_rate_multiplier: value });
+        state.settings.delivery_rate_multiplier = value;
+        paneEl.querySelectorAll('.surge-pill').forEach(p => {
+          p.setAttribute('style', surgePillStyle(Number(p.dataset.surge) === value));
+        });
+        const saved = paneEl.querySelector('#surge-saved');
+        saved.style.display = '';
+        clearTimeout(surgeSavedTimer);
+        surgeSavedTimer = setTimeout(() => { saved.style.display = 'none'; }, 2000);
+      } catch (e) { toastError(e.message); }
+    });
   });
 
   // Delivery save
