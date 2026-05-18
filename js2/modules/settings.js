@@ -39,6 +39,14 @@ const DEFAULT_TIERS = [
   { tier_level: 1, name: 'Seedling', icon: '🌱', color: '#27AE60', min_spend: 0     },
 ];
 
+// QR code upload targets — each maps a payment method to its store_settings
+// column. The components are identical; only the column and label differ.
+const QR_METHODS = [
+  { key: 'gcash', label: 'GCash QR Code',         column: 'gcash_qr_url' },
+  { key: 'maya',  label: 'Maya QR Code',          column: 'maya_qr_url'  },
+  { key: 'bank',  label: 'Bank Transfer QR Code', column: 'bank_qr_url'  },
+];
+
 async function loadAll() {
   const sb = getSB();
 
@@ -102,6 +110,9 @@ function render() {
   const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   const accent = s.theme_color || '#00C9A7';
   const themeMode = localStorage.getItem('mbg-theme-mode') || 'dark';
+  const gcashQR = s.gcash_qr_url || '';
+  const mayaQR  = s.maya_qr_url  || '';
+  const bankQR  = s.bank_qr_url  || '';
 
   paneEl.innerHTML = `
     <div class="filter-row">
@@ -168,6 +179,16 @@ function render() {
           <input class="input" id="pm-gcash-name" value="${escapeHTML(s.gcash_name || '')}"/>
         </div>
       </div>
+      ${qrUploadHTML(QR_METHODS[0], gcashQR)}
+
+      <div style="font-weight:600;margin:14px 0 6px">Maya</div>
+      <div class="field-row">
+        <div style="flex:1 1 180px">
+          <label class="field-label">Number</label>
+          <input class="input" id="pm-maya-num" value="${escapeHTML(s.maya_number || '')}"/>
+        </div>
+      </div>
+      ${qrUploadHTML(QR_METHODS[1], mayaQR)}
 
       <div style="font-weight:600;margin:14px 0 6px">Bank</div>
       <div class="field-row">
@@ -184,6 +205,7 @@ function render() {
           <input class="input" id="pm-bank-holder" value="${escapeHTML(s.bank_account_name || '')}"/>
         </div>
       </div>
+      ${qrUploadHTML(QR_METHODS[2], bankQR)}
 
       <div style="font-weight:600;margin:14px 0 6px">USDT / Crypto</div>
       <label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:6px">
@@ -427,6 +449,36 @@ function tiersHTML() {
   `).join('');
 }
 
+/* ---------- QR upload component ---------- */
+
+// Renders one QR upload block: preview (or dashed placeholder), an Upload
+// button wired to a hidden image-only file input, and a Remove button shown
+// only when a QR already exists. Handlers are bound in bindQRUploads().
+function qrUploadHTML(method, url) {
+  const k = method.key;
+  const has = !!url;
+  return `
+    <div class="qr-upload" style="margin-top:12px">
+      <label class="field-label">${method.label}</label>
+      <div style="display:flex;gap:12px;align-items:flex-start;margin-top:4px">
+        <img id="qr-${k}-img" src="${escapeHTML(url)}" alt=""
+             style="width:120px;height:120px;object-fit:cover;border-radius:8px;background:var(--bg-base);border:1px solid var(--border);${has ? '' : 'display:none'}"/>
+        <div id="qr-${k}-ph"
+             style="width:120px;height:120px;border:1px dashed var(--border);border-radius:8px;color:var(--text-muted);font-size:12px;text-align:center;padding:8px;box-sizing:border-box;align-items:center;justify-content:center;${has ? 'display:none' : 'display:flex'}">
+          No QR uploaded yet
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <button type="button" class="btn btn-sm btn-ghost" id="qr-${k}-upload">Upload QR</button>
+          <button type="button" class="btn btn-sm btn-danger" id="qr-${k}-remove" style="${has ? '' : 'display:none'}">Remove QR</button>
+          <span id="qr-${k}-status" style="font-size:12px;color:var(--text-muted)"></span>
+        </div>
+      </div>
+      <input type="file" id="qr-${k}-file" accept="image/*" style="display:none"/>
+      <input type="hidden" id="qr-${k}-url" value="${escapeHTML(url)}"/>
+    </div>
+  `;
+}
+
 /* ---------- Geocoding (OpenStreetMap Nominatim) ---------- */
 
 async function geocodePH(query) {
@@ -536,15 +588,81 @@ function bindHandlers() {
       await saveSettings({
         gcash_number:        paneEl.querySelector('#pm-gcash-num').value.trim() || null,
         gcash_name:          paneEl.querySelector('#pm-gcash-name').value.trim() || null,
+        maya_number:         paneEl.querySelector('#pm-maya-num').value.trim() || null,
         bank_name:           paneEl.querySelector('#pm-bank-name').value.trim() || null,
         bank_account:        paneEl.querySelector('#pm-bank-acct').value.trim() || null,
         bank_account_name:   paneEl.querySelector('#pm-bank-holder').value.trim() || null,
         crypto_enabled:      paneEl.querySelector('#pm-crypto-en').checked,
         crypto_usdt_address: addr || null,
         crypto_usdt_network: paneEl.querySelector('#pm-crypto-net').value || null,
+        gcash_qr_url:        paneEl.querySelector('#qr-gcash-url').value || null,
+        maya_qr_url:         paneEl.querySelector('#qr-maya-url').value || null,
+        bank_qr_url:         paneEl.querySelector('#qr-bank-url').value || null,
       });
       toast('Payment saved'); await loadAll();
     } catch (e) { toastError(e.message); }
+  });
+
+  // QR uploads — one identical handler set per payment method. Each upload
+  // persists immediately to its store_settings column (like the surge pills);
+  // it does not wait for the "Save payment" button.
+  QR_METHODS.forEach(m => {
+    const fileEl   = paneEl.querySelector(`#qr-${m.key}-file`);
+    const uploadEl = paneEl.querySelector(`#qr-${m.key}-upload`);
+    const removeEl = paneEl.querySelector(`#qr-${m.key}-remove`);
+    const imgEl    = paneEl.querySelector(`#qr-${m.key}-img`);
+    const phEl     = paneEl.querySelector(`#qr-${m.key}-ph`);
+    const urlEl    = paneEl.querySelector(`#qr-${m.key}-url`);
+    const statusEl = paneEl.querySelector(`#qr-${m.key}-status`);
+    if (!fileEl) return;
+
+    let statusTimer = null;
+
+    uploadEl.addEventListener('click', () => fileEl.click());
+
+    fileEl.addEventListener('change', async (e) => {
+      const f = e.target.files[0];
+      if (!f) return;
+      clearTimeout(statusTimer);
+      statusEl.textContent = 'Uploading…';
+      statusEl.style.color = 'var(--text-muted)';
+      try {
+        const url = await uploadQR(f);
+        await saveSettings({ [m.column]: url });
+        if (state.settings) state.settings[m.column] = url;
+        urlEl.value = url;
+        imgEl.src = url;
+        imgEl.style.display = '';
+        phEl.style.display = 'none';
+        removeEl.style.display = '';
+        statusEl.textContent = '✓ QR saved';
+        statusEl.style.color = 'var(--green)';
+        statusTimer = setTimeout(() => { statusEl.textContent = ''; }, 2000);
+      } catch (err) {
+        statusEl.textContent = '✗ Upload failed: ' + (err.message || 'unknown error');
+        statusEl.style.color = 'var(--red)';
+      } finally {
+        fileEl.value = '';
+      }
+    });
+
+    removeEl.addEventListener('click', async () => {
+      if (!confirm('Remove this QR code?')) return;
+      clearTimeout(statusTimer);
+      try {
+        await saveSettings({ [m.column]: null });
+        if (state.settings) state.settings[m.column] = null;
+        urlEl.value = '';
+        imgEl.src = '';
+        imgEl.style.display = 'none';
+        phEl.style.display = 'flex';
+        removeEl.style.display = 'none';
+        statusEl.textContent = '';
+      } catch (err) {
+        statusEl.textContent = '✗ Remove failed: ' + (err.message || 'unknown error');
+        statusEl.style.color = 'var(--red)';
+      }
+    });
   });
 
   // CoinGecko rate (§10.6) — manual refresh + 60s auto-refresh
