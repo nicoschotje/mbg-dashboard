@@ -98,6 +98,7 @@ function orderCardHTML(o) {
           <span>${escapeHTML(o.payment_method || '—')}</span>
           <span>${itemCount} item${itemCount === 1 ? '' : 's'}</span>
           ${o.delivery_zone ? `<span>📍 ${escapeHTML(o.delivery_zone)}</span>` : ''}
+          ${o.receipt_url ? `<span style="color:var(--green)" title="Receipt uploaded">📎 Receipt</span>` : ''}
         </div>
       </div>
       <div>
@@ -231,7 +232,58 @@ async function markPaid(order) {
   render();
 }
 
+async function markVerified(order) {
+  const sb = getSB();
+  const { error } = await sb.from('orders')
+    .update({ payment_status: 'verified', updated_at: new Date().toISOString() })
+    .eq('id', order.id);
+  if (error) { toastError(error.message); return; }
+  toast(`Payment verified: #${shortId(order.id)}`);
+  await loadOrders();
+  render();
+}
+
 /* ---------- Detail modal ---------- */
+
+// Receipt-bearing payment methods — these are paid out-of-band so the owner
+// needs to eyeball the uploaded screenshot before treating the order as paid.
+const RECEIPT_METHODS = ['gcash', 'maya', 'bank_transfer', 'usdt'];
+
+// Builds the "Payment Receipt" card for the detail modal: receipt thumbnail
+// (or a muted placeholder), a verified/awaiting badge, and a verify button
+// for GCash/Maya orders that have a receipt but aren't verified yet.
+function paymentReceiptHTML(order) {
+  const method   = (order.payment_method || '').toLowerCase();
+  const hasReceipt = !!order.receipt_url;
+  const verified = order.payment_status === 'verified';
+
+  let badge = '';
+  if (verified) {
+    badge = `<span class="status-badge" style="background:var(--green);color:#fff">✓ Payment Verified</span>`;
+  } else if (!hasReceipt && RECEIPT_METHODS.includes(method)) {
+    badge = `<span class="status-badge" style="background:var(--orange);color:#fff">⚠ Awaiting Receipt</span>`;
+  }
+
+  const showVerify = (method === 'gcash' || method === 'maya') && hasReceipt && !verified;
+
+  return `
+    <div class="card" style="margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+        <span style="font-weight:600">Payment Receipt</span>
+        ${badge}
+      </div>
+      ${hasReceipt ? `
+        <a href="${escapeHTML(order.receipt_url)}" target="_blank" rel="noopener">
+          <img src="${escapeHTML(order.receipt_url)}" alt="Payment receipt"
+               style="max-width:200px;width:100%;border-radius:8px;border:1px solid var(--border);display:block"/>
+        </a>
+        <a href="${escapeHTML(order.receipt_url)}" target="_blank" rel="noopener"
+           style="display:inline-block;margin-top:6px;font-size:13px;color:var(--green)">View full size</a>
+      ` : `<div style="color:var(--text-muted);font-size:13px">No receipt uploaded</div>`}
+      ${showVerify ? `<div style="margin-top:10px"><button class="btn btn-sm" data-d-action="verify">Mark as Verified</button></div>` : ''}
+    </div>
+  `;
+}
 
 function openDetail(order) {
   if (!modalBackdrop) return;
@@ -276,6 +328,8 @@ function openDetail(order) {
       </div>
     </div>
 
+    ${paymentReceiptHTML(order)}
+
     <div class="close-row">
       ${nextStatus(order.order_status) ? `<button class="btn btn-sm" data-d-action="advance">→ ${escapeHTML(STATUS_LABELS[nextStatus(order.order_status)])}</button>` : ''}
       ${order.order_status !== 'cancelled' && order.order_status !== 'completed'
@@ -293,6 +347,12 @@ function openDetail(order) {
       if (action === 'advance') { await advanceStatus(order); modalBackdrop.classList.remove('show'); }
       if (action === 'cancel')  { await cancelOrder(order);   modalBackdrop.classList.remove('show'); }
       if (action === 'print')   printReceipt(order);
+      if (action === 'verify') {
+        await markVerified(order);
+        const fresh = AppState.orders.find(o => o.id === order.id);
+        if (fresh) openDetail(fresh);
+        else modalBackdrop.classList.remove('show');
+      }
     });
   });
 }
