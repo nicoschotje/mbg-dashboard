@@ -72,6 +72,7 @@ function renderShell() {
     <div class="filter-row">
       <button class="btn btn-sm" id="i-recompute">Recompute scores</button>
       <button class="btn btn-ghost btn-sm" id="i-refresh">Refresh</button>
+      <button class="btn btn-sm" id="i-reset" style="border-color:var(--red);color:var(--red)">🗑 Reset Data</button>
     </div>
 
     <div class="subtabs">
@@ -83,6 +84,7 @@ function renderShell() {
 
   paneEl.querySelector('#i-recompute').addEventListener('click', recompute);
   paneEl.querySelector('#i-refresh').addEventListener('click', async () => { await loadAll(); renderActiveTab(); });
+  paneEl.querySelector('#i-reset').addEventListener('click', resetIntelligenceData);
 
   paneEl.querySelectorAll('[data-itab]').forEach(b => {
     b.addEventListener('click', () => {
@@ -411,6 +413,34 @@ async function recompute() {
   } catch (e) {
     if (status) { status.textContent = e.message || 'Recompute failed'; status.style.color = 'var(--red)'; }
     toastError(e.message || 'Recompute failed');
+  }
+}
+
+/* ---------- Reset intelligence data (two-confirm, hard delete) ---------- */
+
+async function resetIntelligenceData() {
+  if (!confirm('This will delete all intelligence data and client records. Are you sure?')) return;
+  if (!confirm('This cannot be undone. Delete everything?')) return;
+
+  const btn = paneEl.querySelector('#i-reset');
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Resetting…';
+  try {
+    const sb = getSB();
+    for (const table of ['mbg_client_intelligence', 'mbg_clients', 'mbg_tier_history']) {
+      const { error } = await sb.from(table).delete();
+      if (error) throw new Error(`${table}: ${error.message}`);
+    }
+    btn.textContent = '✓ Intelligence data cleared';
+    toast('Intelligence data cleared.');
+    await loadAll();
+    renderActiveTab();
+    setTimeout(() => { btn.textContent = label; btn.disabled = false; }, 2000);
+  } catch (e) {
+    btn.textContent = '✗ Error: ' + (e.message || 'reset failed');
+    btn.disabled = false;
+    toastError(e.message || 'Reset failed');
   }
 }
 

@@ -17,7 +17,7 @@ let modalBody = null;
 const filterState = {
   status: 'all',          // all | pending | confirmed | preparing | out_for_delivery | completed | cancelled
   dateRange: 'today',     // today | yesterday | week | all | custom
-  payment: 'all',         // all | cod | gcash | bank | crypto
+  payment: 'all',         // all | gcash | maya | bank_transfer | usdt | cod
   search: '',
   customStart: null,
   customEnd: null,
@@ -85,8 +85,8 @@ function tierBadge(phone) {
 
 function orderCardHTML(o) {
   const phone = o.customer_phone || o.contact || '';
-  const items = Array.isArray(o.order_items) ? o.order_items : [];
-  const itemCount = items.reduce((acc, it) => acc + (parseInt(it.qty, 10) || 1), 0);
+  const items = Array.isArray(o.items) ? o.items : [];
+  const itemCount = items.length;
   const status = o.order_status || 'pending';
   return `
     <article class="order-card" data-id="${escapeHTML(o.id)}">
@@ -98,6 +98,7 @@ function orderCardHTML(o) {
           <span>${escapeHTML(o.payment_method || '—')}</span>
           <span>${itemCount} item${itemCount === 1 ? '' : 's'}</span>
           ${o.delivery_zone ? `<span>📍 ${escapeHTML(o.delivery_zone)}</span>` : ''}
+          ${o.receipt_url ? `<span style="color:var(--green)" title="Receipt uploaded">📎 Receipt</span>` : ''}
         </div>
       </div>
       <div>
@@ -131,53 +132,33 @@ function render() {
 
 /* ---------- Telegram notify (§5.2, §10.1, §10.9) ---------- */
 
-// §10.9 message templates per status. Returns null for statuses without a
-// customer-facing template (e.g. 'preparing' is internal kitchen state).
-function buildStatusMessage(order, newStatus) {
-  const name    = order.customer_name || 'there';
-  const sid     = shortId(order.id);
-  const total   = formatCurrency(order.total);
-  const payment = order.payment_method || 'COD';
-  const store   = AppState.settings?.store_name || "Mr. Beanie's Greenies";
+// Customer-facing message per status. `pending` is the initial state and has
+// no entry, so no notification fires on order creation.
+const STATUS_MESSAGES = {
+  confirmed:        'Your order and payment has been confirmed. We will be preparing it shortly.',
+  preparing:        'Your order is ready. We will be booking your rider shortly.',
+  out_for_delivery: 'Your order has been picked up and is now on its way to you. Please keep your line open for when your rider arrives and contacts you.',
+  completed:        'Your order has now been delivered. Enjoy your smoke! 🌿',
+  cancelled:        'Your order has been cancelled. Please contact us if you have any questions.',
+};
 
-  if (newStatus === 'confirmed') {
-    return `Hi ${name}! Your order #${sid} has been confirmed.\n` +
-           `Total: ${total} via ${payment}.\n` +
-           `We'll notify you when it's being prepared. Thank you! 🌿`;
-  }
-  if (newStatus === 'out_for_delivery') {
-    return `Hi ${name}! Your order #${sid} is now out for delivery!\n` +
-           `Rider is on the way. Please be ready. 🛵`;
-  }
-  if (newStatus === 'completed') {
-    return `Hi ${name}! Your order #${sid} has been delivered.\n` +
-           `Thank you for choosing ${store}! 🌱`;
-  }
-  if (newStatus === 'cancelled') {
-    return `Hi ${name}, your order #${sid} has been cancelled.\n` +
-           `If this was unexpected, please contact us. Sorry for the inconvenience.`;
-  }
-  return null;
+// POSTs a Telegram DM via the notify-customer edge function. Both `message`
+// and `custom_message` carry the same text so the call works regardless of
+// which key the edge function reads; `new_status` is included for status
+// changes. The x-admin-secret header is attached globally by the SB client.
+async function sendTelegram(orderId, message, newStatus) {
+  const body = { order_id: orderId, message, custom_message: message };
+  if (newStatus) body.new_status = newStatus;
+  const { error } = await getSB().functions.invoke('notify-customer', { body });
+  if (error) throw error;
 }
 
-// Fire-and-forget Telegram notify. Failure is non-blocking — surfaces as a
-// warning toast but never blocks or reverts the status advance.
+// Fire-and-forget status notification. Failure is non-blocking — surfaces as
+// a warning toast but never blocks or reverts the status change.
 async function notifyCustomer(order, newStatus) {
-  if (!order?.telegram_chat_id) return;            // §10.1: gate on chat ID
-  const message = buildStatusMessage(order, newStatus);
+  const message = STATUS_MESSAGES[newStatus];
   if (!message) return;                            // no template → skip
-
-  const sb = getSB();
-  const { error } = await sb.functions.invoke('notify-customer', {
-    body: {
-      telegram_chat_id: order.telegram_chat_id,
-      order_id: order.id,
-      status: newStatus,
-      customer_name: order.customer_name || '',
-      message,
-    },
-  });
-  if (error) throw error;
+  await sendTelegram(order.id, message, newStatus);
 }
 
 /* ---------- Mutations (blueprint §11.2) ---------- */
@@ -193,11 +174,11 @@ async function quickSetStatus(orderId, newStatus) {
   if (error) { toastError(error.message); return false; }
   toast(`Order ${shortId(orderId)} → ${STATUS_LABELS[newStatus] || newStatus}`);
 
-  // §10.1: after status update, call notify-customer if chat ID present.
-  // Run asynchronously so a failed/slow edge function never blocks the UI.
-  if (order?.telegram_chat_id) {
-    notifyCustomer(order, newStatus).catch(err => {
-      toastWarn(`Telegram notify failed: ${err?.message || err}`);
+  // §10.1: after every status update, notify the customer. Run asynchronously
+  // so a failed/slow edge function never blocks or reverts the status change.
+  if (order) {
+    notifyCustomer(order, newStatus).catch(() => {
+      toastWarn('Status updated. Telegram notification failed.');
     });
   }
 
@@ -228,11 +209,95 @@ async function markPaid(order) {
   render();
 }
 
+async function markVerified(order) {
+  const sb = getSB();
+  const { error } = await sb.from('orders')
+    .update({ payment_status: 'verified', updated_at: new Date().toISOString() })
+    .eq('id', order.id);
+  if (error) { toastError(error.message); return; }
+  toast(`Payment verified: #${shortId(order.id)}`);
+
+  // Non-blocking: the verification has already been committed.
+  sendTelegram(order.id, 'Your payment has been verified. Thank you!')
+    .catch(() => toastWarn('Payment verified. Telegram notification failed.'));
+
+  await loadOrders();
+  render();
+}
+
+// Deletes the receipt image from the `payment-receipts` storage bucket and
+// clears receipt_url on the order. The storage path is the segment of the
+// public receipt_url after the bucket name.
+async function deleteReceipt(order) {
+  if (!confirm('Delete this receipt image? This cannot be undone.')) return false;
+  const sb = getSB();
+
+  const url    = order.receipt_url || '';
+  const marker = '/payment-receipts/';
+  const idx    = url.indexOf(marker);
+  const path   = (idx >= 0 ? url.slice(idx + marker.length) : url.split('/').pop() || '')
+                  .split('?')[0];
+
+  const { error: rmErr } = await sb.storage.from('payment-receipts').remove([path]);
+  if (rmErr) { toastError('Failed to delete: ' + rmErr.message); return false; }
+
+  const { error: updErr } = await sb.from('orders')
+    .update({ receipt_url: null, updated_at: new Date().toISOString() })
+    .eq('id', order.id);
+  if (updErr) { toastError('Failed to delete: ' + updErr.message); return false; }
+
+  toast('Receipt deleted');
+  await loadOrders();
+  render();
+  return true;
+}
+
 /* ---------- Detail modal ---------- */
+
+// Receipt-bearing payment methods — these are paid out-of-band so the owner
+// needs to eyeball the uploaded screenshot before treating the order as paid.
+const RECEIPT_METHODS = ['gcash', 'maya', 'bank_transfer', 'usdt'];
+
+// Builds the "Payment Receipt" card for the detail modal: receipt thumbnail
+// (or a muted placeholder), a verified/awaiting badge, and a verify button
+// for GCash/Maya orders that have a receipt but aren't verified yet.
+function paymentReceiptHTML(order) {
+  const method   = (order.payment_method || '').toLowerCase();
+  const hasReceipt = !!order.receipt_url;
+  const verified = order.payment_status === 'verified';
+
+  let badge = '';
+  if (verified) {
+    badge = `<span class="status-badge" style="background:var(--green);color:#fff">✓ Payment Verified</span>`;
+  } else if (!hasReceipt && RECEIPT_METHODS.includes(method)) {
+    badge = `<span class="status-badge" style="background:var(--orange);color:#fff">⚠ Awaiting Receipt</span>`;
+  }
+
+  const showVerify = (method === 'gcash' || method === 'maya') && hasReceipt && !verified;
+
+  return `
+    <div class="card" style="margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+        <span style="font-weight:600">Payment Receipt</span>
+        ${badge}
+      </div>
+      ${hasReceipt ? `
+        <a href="${escapeHTML(order.receipt_url)}" target="_blank" rel="noopener">
+          <img src="${escapeHTML(order.receipt_url)}" alt="Payment receipt"
+               style="max-width:200px;width:100%;border-radius:8px;border:1px solid var(--border);display:block"/>
+        </a>
+        <a href="${escapeHTML(order.receipt_url)}" target="_blank" rel="noopener"
+           style="display:inline-block;margin-top:6px;font-size:13px;color:var(--green)">View full size</a>
+      ` : `<div style="color:var(--text-muted);font-size:13px">No receipt uploaded</div>`}
+      ${showVerify ? `<div style="margin-top:10px"><button class="btn btn-sm" data-d-action="verify">Mark as Verified</button></div>` : ''}
+      ${verified && hasReceipt ? `<div style="margin-top:10px"><button class="btn btn-sm btn-ghost" data-d-action="delete-receipt" style="border:1px solid var(--red);color:var(--red)">🗑 Delete Receipt</button></div>` : ''}
+    </div>
+  `;
+}
 
 function openDetail(order) {
   if (!modalBackdrop) return;
-  const items = Array.isArray(order.order_items) ? order.order_items : [];
+  const items = Array.isArray(order.items) ? order.items : [];
   const phone = order.customer_phone || order.contact || '';
   modalBody.innerHTML = `
     <h2>Order #${shortId(order.id)}</h2>
@@ -250,12 +315,22 @@ function openDetail(order) {
 
     <div class="card" style="margin-bottom:14px">
       <div style="font-weight:600;margin-bottom:8px">Items</div>
-      ${items.length ? items.map(it => `
-        <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed var(--border);font-size:13px">
-          <span>${escapeHTML(it.name || '—')} × ${escapeHTML(String(it.qty || 1))}</span>
-          <span style="font-family:'JetBrains Mono',monospace">${formatCurrency((it.price || 0) * (it.qty || 1))}</span>
-        </div>
-      `).join('') : '<div class="empty">No items.</div>'}
+      ${items.length ? items.map(it => {
+        const qty   = it.quantity != null ? it.quantity : (it.qty || 1);
+        const price = parseFloat(it.price) || 0;
+        const thumb = it.image_url
+          ? `<img src="${escapeHTML(it.image_url)}" alt="" style="width:40px;height:40px;border-radius:6px;object-fit:cover;border:1px solid var(--border);flex:none"/>`
+          : `<div style="width:40px;height:40px;border-radius:6px;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:20px;flex:none">${escapeHTML(it.emoji || '🌿')}</div>`;
+        return `
+        <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px dashed var(--border)">
+          ${thumb}
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:600;font-size:13px">${escapeHTML(it.name || '—')}</div>
+            <div style="color:var(--text-muted);font-size:12px;margin-top:2px">${escapeHTML(String(qty))} × ${formatCurrency(price)}</div>
+          </div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:13px">${formatCurrency(price * qty)}</div>
+        </div>`;
+      }).join('') : '<div class="empty">No items.</div>'}
       <div style="margin-top:10px;display:flex;justify-content:space-between;font-size:13px;color:var(--text-muted)">
         <span>Subtotal</span><span>${formatCurrency(order.subtotal)}</span>
       </div>
@@ -272,6 +347,8 @@ function openDetail(order) {
         ${escapeHTML(order.payment_method || '—')} · ${escapeHTML(order.payment_status || 'pending')}
       </div>
     </div>
+
+    ${paymentReceiptHTML(order)}
 
     <div class="close-row">
       ${nextStatus(order.order_status) ? `<button class="btn btn-sm" data-d-action="advance">→ ${escapeHTML(STATUS_LABELS[nextStatus(order.order_status)])}</button>` : ''}
@@ -290,12 +367,26 @@ function openDetail(order) {
       if (action === 'advance') { await advanceStatus(order); modalBackdrop.classList.remove('show'); }
       if (action === 'cancel')  { await cancelOrder(order);   modalBackdrop.classList.remove('show'); }
       if (action === 'print')   printReceipt(order);
+      if (action === 'verify') {
+        await markVerified(order);
+        const fresh = AppState.orders.find(o => o.id === order.id);
+        if (fresh) openDetail(fresh);
+        else modalBackdrop.classList.remove('show');
+      }
+      if (action === 'delete-receipt') {
+        const ok = await deleteReceipt(order);
+        if (ok) {
+          const fresh = AppState.orders.find(o => o.id === order.id);
+          if (fresh) openDetail(fresh);
+          else modalBackdrop.classList.remove('show');
+        }
+      }
     });
   });
 }
 
 function printReceipt(order) {
-  const items = Array.isArray(order.order_items) ? order.order_items : [];
+  const items = Array.isArray(order.items) ? order.items : [];
   const settings = AppState.settings || {};
   const storeName = settings.store_name || "Mr. Beanie's Greenies";
   const storeFooter = [settings.store_phone, settings.store_address].filter(Boolean).join(' · ');
@@ -313,10 +404,12 @@ function printReceipt(order) {
       <div class="muted">Order #${shortId(order.id)} · ${escapeHTML(formatDate(order.created_at))}</div>
       <p>${escapeHTML(order.customer_name || '')}<br>${escapeHTML(order.customer_phone || order.contact || '')}<br>${escapeHTML(order.delivery_address || '')}</p>
       <table>
-        ${items.map(it => `
-          <tr><td>${escapeHTML(it.name || '')} × ${escapeHTML(String(it.qty || 1))}</td>
-              <td style="text-align:right">${formatCurrency((it.price || 0) * (it.qty || 1))}</td></tr>
-        `).join('')}
+        ${items.map(it => {
+          const qty = it.quantity != null ? it.quantity : (it.qty || 1);
+          return `
+          <tr><td>${escapeHTML(it.name || '')} × ${escapeHTML(String(qty))}</td>
+              <td style="text-align:right">${formatCurrency((parseFloat(it.price) || 0) * qty)}</td></tr>
+        `;}).join('')}
         <tr><td>Subtotal</td><td style="text-align:right">${formatCurrency(order.subtotal)}</td></tr>
         <tr><td>Delivery</td><td style="text-align:right">${formatCurrency(order.delivery_fee)}</td></tr>
         ${order.discount_amount ? `<tr><td>Discount</td><td style="text-align:right">-${formatCurrency(order.discount_amount)}</td></tr>` : ''}
@@ -346,10 +439,11 @@ function buildPane() {
       </select>
       <select class="input" id="orders-payment">
         <option value="all">All payments</option>
-        <option value="cod">COD</option>
         <option value="gcash">GCash</option>
-        <option value="bank">Bank</option>
-        <option value="crypto">Crypto</option>
+        <option value="maya">Maya</option>
+        <option value="bank_transfer">Bank transfer</option>
+        <option value="usdt">USDT</option>
+        <option value="cod">COD (legacy)</option>
       </select>
       <button class="btn btn-ghost btn-sm" id="orders-refresh">Refresh</button>
     </div>

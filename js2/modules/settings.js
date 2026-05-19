@@ -13,11 +13,39 @@ import { uploadStoreLogo, uploadQR } from '../core/storage.js';
 
 let mounted = false;
 let paneEl = null;
+let rateTimer = null;
 
 const state = {
   settings: null,        // store_settings row
   zones: [],             // delivery_zones rows
+  tiers: [],             // tier definitions (dashboard_settings TIER_CONFIG)
+  storeOpenOverride: '', // dashboard_settings store_open_override: '' | 'true' | 'false'
 };
+
+const SURGE_VALUES = [1, 1.5, 2, 2.5, 3];
+
+function surgePillStyle(active) {
+  const base = 'padding:7px 14px;border-radius:999px;cursor:pointer;font-family:inherit;font-size:13px;font-weight:600;';
+  return active
+    ? base + 'background:var(--green);color:#fff;border:1px solid var(--green)'
+    : base + 'background:var(--bg-base);color:var(--text-muted);border:1px solid var(--border)';
+}
+
+const DEFAULT_TIERS = [
+  { tier_level: 5, name: 'Diamond',  icon: '💎', color: '#9B59B6', min_spend: 10000 },
+  { tier_level: 4, name: 'Gold',     icon: '🥇', color: '#F39C12', min_spend: 5000  },
+  { tier_level: 3, name: 'Silver',   icon: '🥈', color: '#95A5A6', min_spend: 2000  },
+  { tier_level: 2, name: 'Bronze',   icon: '🥉', color: '#E67E22', min_spend: 500   },
+  { tier_level: 1, name: 'Seedling', icon: '🌱', color: '#27AE60', min_spend: 0     },
+];
+
+// QR code upload targets — each maps a payment method to its store_settings
+// column. The components are identical; only the column and label differ.
+const QR_METHODS = [
+  { key: 'gcash', label: 'GCash QR Code',         column: 'gcash_qr_url' },
+  { key: 'maya',  label: 'Maya QR Code',          column: 'maya_qr_url'  },
+  { key: 'bank',  label: 'Bank Transfer QR Code', column: 'bank_qr_url'  },
+];
 
 async function loadAll() {
   const sb = getSB();
@@ -38,6 +66,23 @@ async function loadAll() {
     .from('delivery_zones').select('*').order('sort_order', { ascending: true });
   if (zErr) toastError('Zones load failed: ' + zErr.message);
   state.zones = zones || [];
+
+  const { data: tierRow, error: tErr } = await sb
+    .from('dashboard_settings').select('value').eq('key', 'TIER_CONFIG').maybeSingle();
+  if (tErr) toastError('Tier config load failed: ' + tErr.message);
+  let parsedTiers = null;
+  if (tierRow?.value) {
+    try { parsedTiers = JSON.parse(tierRow.value); } catch (_) { parsedTiers = null; }
+  }
+  state.tiers = (Array.isArray(parsedTiers) && parsedTiers.length)
+    ? parsedTiers.slice().sort((a, b) => (b.tier_level || 0) - (a.tier_level || 0))
+    : DEFAULT_TIERS.slice();
+
+  // Manual open/closed override (§3.8) — so the Hours card can show the
+  // current setting instead of always defaulting to "follow auto schedule".
+  const { data: ovrRow } = await sb
+    .from('dashboard_settings').select('value').eq('key', 'store_open_override').maybeSingle();
+  state.storeOpenOverride = ovrRow?.value ?? '';
 }
 
 /* ---------- store_settings save (§11.6 upsert pattern) ---------- */
@@ -63,6 +108,11 @@ function render() {
   const s = state.settings || {};
   const hours = s.operating_hours || { open: '08:00', close: '22:00', days: [0,1,2,3,4,5,6] };
   const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const accent = s.theme_color || '#00C9A7';
+  const themeMode = localStorage.getItem('mbg-theme-mode') || 'dark';
+  const gcashQR = s.gcash_qr_url || '';
+  const mayaQR  = s.maya_qr_url  || '';
+  const bankQR  = s.bank_qr_url  || '';
 
   paneEl.innerHTML = `
     <div class="filter-row">
@@ -87,12 +137,26 @@ function render() {
         </div>
       </div>
       <label class="field-label" style="margin-top:10px">Address</label>
-      <textarea class="input" id="p-addr" rows="2">${escapeHTML(s.store_address || '')}</textarea>
+      <div style="position:relative">
+        <textarea class="input" id="p-addr" rows="2">${escapeHTML(s.store_address || '')}</textarea>
+        <div id="p-geo-results" class="geo-results" hidden></div>
+      </div>
+      <div class="field-row" style="margin-top:8px;align-items:flex-end">
+        <div style="flex:1 1 120px">
+          <label class="field-label">Latitude</label>
+          <input class="input" id="p-lat" type="number" step="any" value="${s.store_lat ?? ''}"/>
+        </div>
+        <div style="flex:1 1 120px">
+          <label class="field-label">Longitude</label>
+          <input class="input" id="p-lng" type="number" step="any" value="${s.store_lng ?? ''}"/>
+        </div>
+        <button class="btn btn-ghost btn-sm" id="p-geo-btn" type="button">Find coordinates</button>
+      </div>
 
       <label class="field-label" style="margin-top:10px">Logo</label>
       <div style="display:flex;gap:10px;align-items:center">
         <img id="p-logo-prev" src="${escapeHTML(s.store_logo_url || '')}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;background:var(--bg-base);${s.store_logo_url ? '' : 'display:none'}"/>
-        <input type="file" id="p-logo" accept="image/jpeg,image/png,image/webp"/>
+        <input type="file" id="p-logo" accept="image/png,image/jpeg,image/jpg,image/webp"/>
         <span id="p-logo-status" style="color:var(--text-muted);font-size:12px"></span>
       </div>
       <input type="hidden" id="p-logo-url" value="${escapeHTML(s.store_logo_url || '')}"/>
@@ -115,6 +179,16 @@ function render() {
           <input class="input" id="pm-gcash-name" value="${escapeHTML(s.gcash_name || '')}"/>
         </div>
       </div>
+      ${qrUploadHTML(QR_METHODS[0], gcashQR)}
+
+      <div style="font-weight:600;margin:14px 0 6px">Maya</div>
+      <div class="field-row">
+        <div style="flex:1 1 180px">
+          <label class="field-label">Number</label>
+          <input class="input" id="pm-maya-num" value="${escapeHTML(s.maya_number || '')}"/>
+        </div>
+      </div>
+      ${qrUploadHTML(QR_METHODS[1], mayaQR)}
 
       <div style="font-weight:600;margin:14px 0 6px">Bank</div>
       <div class="field-row">
@@ -131,6 +205,7 @@ function render() {
           <input class="input" id="pm-bank-holder" value="${escapeHTML(s.bank_account_name || '')}"/>
         </div>
       </div>
+      ${qrUploadHTML(QR_METHODS[2], bankQR)}
 
       <div style="font-weight:600;margin:14px 0 6px">USDT / Crypto</div>
       <label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:6px">
@@ -149,7 +224,11 @@ function render() {
           </select>
         </div>
       </div>
-      <div id="pm-rate" style="color:var(--text-muted);font-size:12px;margin-top:8px">USDT/PHP rate: <span id="pm-rate-val">—</span> <button class="btn btn-ghost btn-sm" id="pm-rate-fetch">Fetch live</button></div>
+      <div id="pm-rate" style="color:var(--text-muted);font-size:12px;margin-top:8px">
+        USDT/PHP rate: <span id="pm-rate-val">…</span>
+        <span id="pm-rate-time" style="margin-left:6px"></span>
+        <button class="btn btn-ghost btn-sm" id="pm-rate-fetch">Refresh now</button>
+      </div>
 
       <button class="btn btn-sm" id="pm-save" style="margin-top:14px">Save payment</button>
     </div>
@@ -171,6 +250,19 @@ function render() {
           <input class="input" id="d-minorder" type="number" min="0" step="0.01" value="${s.min_order_amount ?? 0}"/>
         </div>
       </div>
+
+      <div style="margin-top:14px">
+        <label class="field-label">Surge Multiplier</label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px">
+          <div id="surge-pills" style="display:flex;gap:8px;flex-wrap:wrap">
+            ${SURGE_VALUES.map(v => `
+              <button type="button" class="surge-pill" data-surge="${v}" style="${surgePillStyle(Number(s.delivery_rate_multiplier ?? 1) === v)}">×${v}</button>
+            `).join('')}
+          </div>
+          <span id="surge-saved" style="display:none;color:#27AE60;font-size:13px;font-weight:600">Saved ✓</span>
+        </div>
+      </div>
+
       <button class="btn btn-sm" id="d-save" style="margin-top:10px">Save delivery</button>
 
       <div style="font-weight:600;margin:18px 0 6px">Zones</div>
@@ -211,9 +303,9 @@ function render() {
         <div style="flex:1 1 220px">
           <label class="field-label">Manual override</label>
           <select class="input" id="h-override">
-            <option value="">— follow auto schedule —</option>
-            <option value="true">Force OPEN</option>
-            <option value="false">Force CLOSED</option>
+            <option value=""     ${state.storeOpenOverride === ''     ? 'selected' : ''}>— follow auto schedule —</option>
+            <option value="true" ${state.storeOpenOverride === 'true'  ? 'selected' : ''}>Force OPEN</option>
+            <option value="false"${state.storeOpenOverride === 'false' ? 'selected' : ''}>Force CLOSED</option>
           </select>
         </div>
       </div>
@@ -233,7 +325,37 @@ function render() {
           <input class="input" id="n-chat" value="${escapeHTML(s.telegram_chat_id || '')}"/>
         </div>
       </div>
-      <button class="btn btn-sm" id="n-save" style="margin-top:10px">Save notifications</button>
+      <div class="field-row" style="margin-top:10px;align-items:center">
+        <button class="btn btn-sm" id="n-save">Save notifications</button>
+        <button class="btn btn-sm btn-ghost" id="n-test">Send test alert</button>
+        <span id="n-status" style="color:var(--text-muted);font-size:12px"></span>
+      </div>
+    </div>
+
+    <!-- Tier Configuration -->
+    <div class="card" style="margin-bottom:14px">
+      <h3 style="margin:0 0 10px;font-family:'Syne',sans-serif">Tier Configuration</h3>
+      <p style="color:var(--text-muted);font-size:13px;margin:0 0 12px">
+        Tiers are assigned automatically based on customer lifetime spend (₱).
+      </p>
+      <div id="tier-list">${tiersHTML()}</div>
+      <button class="btn btn-sm" id="tier-save" style="margin-top:10px">Save tiers</button>
+    </div>
+
+    <!-- Appearance -->
+    <div class="card" style="margin-bottom:14px">
+      <h3 style="margin:0 0 10px;font-family:'Syne',sans-serif">Appearance</h3>
+      <label class="field-label">Accent colour</label>
+      <div style="display:flex;align-items:center;gap:10px">
+        <input type="color" id="ap-accent" value="${escapeHTML(accent)}" style="width:48px;height:34px;padding:2px;border:1px solid var(--border);border-radius:6px;background:var(--bg-base)"/>
+        <span id="ap-accent-hex" style="font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--text-muted)">${escapeHTML(accent)}</span>
+      </div>
+      <label class="field-label" style="margin-top:12px">Theme mode</label>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-sm ap-mode ${themeMode === 'dark' ? '' : 'btn-ghost'}" data-mode="dark">🌙 Dark</button>
+        <button class="btn btn-sm ap-mode ${themeMode === 'light' ? '' : 'btn-ghost'}" data-mode="light">☀️ Light</button>
+      </div>
+      <button class="btn btn-sm" id="ap-save" style="margin-top:14px">Save appearance</button>
     </div>
 
     <!-- PIN management -->
@@ -264,6 +386,43 @@ function render() {
   `;
 
   bindHandlers();
+  startRateAutoRefresh();
+}
+
+/* ---------- USDT live rate ---------- */
+
+async function fetchUSDTPHPRate() {
+  try {
+    const res = await fetch(
+      'https://api.coingecko.com/api/v3/simple/price?ids=tether&vs_currencies=php',
+      { cache: 'no-store' }
+    );
+    const data = await res.json();
+    return data?.tether?.php ?? null;
+  } catch (_) { return null; }
+}
+
+async function updateUSDTRate() {
+  if (!paneEl?.querySelector('#pm-rate-val')) return;
+  const rate = await fetchUSDTPHPRate();
+  // The pane may have been re-rendered while the request was in flight.
+  const valEl  = paneEl?.querySelector('#pm-rate-val');
+  const timeEl = paneEl?.querySelector('#pm-rate-time');
+  if (!valEl) return;
+  valEl.textContent = rate != null
+    ? '₱' + rate.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : 'unavailable';
+  if (timeEl) {
+    timeEl.textContent = rate != null
+      ? `(updated ${new Date().toLocaleTimeString('en-PH')})`
+      : '';
+  }
+}
+
+function startRateAutoRefresh() {
+  if (rateTimer) clearInterval(rateTimer);
+  updateUSDTRate();
+  rateTimer = setInterval(updateUSDTRate, 60_000);
 }
 
 function zonesHTML() {
@@ -277,10 +436,112 @@ function zonesHTML() {
   `).join('');
 }
 
+function tiersHTML() {
+  if (!state.tiers.length) return `<div class="empty" style="padding:14px">No tiers configured.</div>`;
+  return state.tiers.map(t => `
+    <div data-tier-level="${t.tier_level}" style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px dashed var(--border);flex-wrap:wrap">
+      <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text-muted);width:18px">L${t.tier_level}</span>
+      <input class="input tc-icon" value="${escapeHTML(t.icon || '')}" maxlength="4" placeholder="Icon" style="flex:0 0 56px;text-align:center"/>
+      <input class="input tc-name" value="${escapeHTML(t.name || '')}" placeholder="Name" style="flex:1 1 110px"/>
+      <input class="input tc-spend" type="number" min="0" step="0.01" value="${t.min_spend ?? 0}" placeholder="Min ₱" style="flex:1 1 100px"/>
+      <input class="tc-color" type="color" value="${escapeHTML(t.color || '#888888')}" style="flex:0 0 40px;height:34px;padding:2px;border:1px solid var(--border);border-radius:6px;background:var(--bg-base)"/>
+    </div>
+  `).join('');
+}
+
+/* ---------- QR upload component ---------- */
+
+// Renders one QR upload block: preview (or dashed placeholder), an Upload
+// button wired to a hidden image-only file input, and a Remove button shown
+// only when a QR already exists. Handlers are bound in bindQRUploads().
+function qrUploadHTML(method, url) {
+  const k = method.key;
+  const has = !!url;
+  return `
+    <div class="qr-upload" style="margin-top:12px">
+      <label class="field-label">${method.label}</label>
+      <div style="display:flex;gap:12px;align-items:flex-start;margin-top:4px">
+        <img id="qr-${k}-img" src="${escapeHTML(url)}" alt=""
+             style="width:120px;height:120px;object-fit:cover;border-radius:8px;background:var(--bg-base);border:1px solid var(--border);${has ? '' : 'display:none'}"/>
+        <div id="qr-${k}-ph"
+             style="width:120px;height:120px;border:1px dashed var(--border);border-radius:8px;color:var(--text-muted);font-size:12px;text-align:center;padding:8px;box-sizing:border-box;align-items:center;justify-content:center;${has ? 'display:none' : 'display:flex'}">
+          No QR uploaded yet
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <button type="button" class="btn btn-sm btn-ghost" id="qr-${k}-upload">Upload QR</button>
+          <button type="button" class="btn btn-sm btn-danger" id="qr-${k}-remove" style="${has ? '' : 'display:none'}">Remove QR</button>
+          <span id="qr-${k}-status" style="font-size:12px;color:var(--text-muted)"></span>
+        </div>
+      </div>
+      <input type="file" id="qr-${k}-file" accept="image/png,image/jpeg,image/jpg,image/webp" style="display:none"/>
+      <input type="hidden" id="qr-${k}-url" value="${escapeHTML(url)}"/>
+    </div>
+  `;
+}
+
+/* ---------- Geocoding (OpenStreetMap Nominatim) ---------- */
+
+async function geocodePH(query) {
+  const url = new URL('https://nominatim.openstreetmap.org/search');
+  url.searchParams.set('q', query);
+  url.searchParams.set('format', 'json');
+  url.searchParams.set('limit', '5');
+  url.searchParams.set('countrycodes', 'ph');
+  const res = await fetch(url.toString());
+  const results = await res.json();
+  return (results || []).map(r => ({
+    display: r.display_name,
+    lat: parseFloat(r.lat),
+    lng: parseFloat(r.lon),
+  }));
+}
+
+function bindStoreGeocoding() {
+  const addrEl    = paneEl.querySelector('#p-addr');
+  const latEl     = paneEl.querySelector('#p-lat');
+  const lngEl     = paneEl.querySelector('#p-lng');
+  const resultsEl = paneEl.querySelector('#p-geo-results');
+  const btnEl     = paneEl.querySelector('#p-geo-btn');
+
+  async function runSearch() {
+    const q = addrEl.value.trim();
+    if (q.length < 5) { resultsEl.hidden = true; return; }
+    let results = [];
+    try { results = await geocodePH(q); } catch (_) { results = []; }
+    if (!results.length) {
+      resultsEl.innerHTML = `<div class="geo-result" style="color:var(--text-muted)">No matches found.</div>`;
+      resultsEl.hidden = false;
+      return;
+    }
+    resultsEl.innerHTML = results.map((r, i) =>
+      `<div class="geo-result" data-i="${i}">${escapeHTML(r.display)}</div>`).join('');
+    resultsEl.hidden = false;
+    resultsEl.querySelectorAll('.geo-result[data-i]').forEach(el => {
+      el.addEventListener('click', () => {
+        const r = results[Number(el.dataset.i)];
+        addrEl.value = r.display;
+        latEl.value  = r.lat;
+        lngEl.value  = r.lng;
+        resultsEl.hidden = true;
+      });
+    });
+  }
+
+  let timer;
+  addrEl.addEventListener('input', () => {
+    clearTimeout(timer);
+    timer = setTimeout(runSearch, 400);
+  });
+  btnEl.addEventListener('click', runSearch);
+  addrEl.addEventListener('blur', () => setTimeout(() => { resultsEl.hidden = true; }, 200));
+}
+
 /* ---------- Handlers ---------- */
 
 function bindHandlers() {
   paneEl.querySelector('#s-refresh').addEventListener('click', async () => { await loadAll(); render(); });
+
+  bindStoreGeocoding();
 
   // Logo upload
   paneEl.querySelector('#p-logo').addEventListener('change', async (e) => {
@@ -305,6 +566,8 @@ function bindHandlers() {
         store_phone:   paneEl.querySelector('#p-phone').value.trim() || null,
         store_email:   paneEl.querySelector('#p-email').value.trim() || null,
         store_address: paneEl.querySelector('#p-addr').value.trim() || null,
+        store_lat: parseFloat(paneEl.querySelector('#p-lat').value) || null,
+        store_lng: parseFloat(paneEl.querySelector('#p-lng').value) || null,
         store_logo_url: paneEl.querySelector('#p-logo-url').value || null,
       });
       toast('Profile saved'); await loadAll();
@@ -325,28 +588,103 @@ function bindHandlers() {
       await saveSettings({
         gcash_number:        paneEl.querySelector('#pm-gcash-num').value.trim() || null,
         gcash_name:          paneEl.querySelector('#pm-gcash-name').value.trim() || null,
+        maya_number:         paneEl.querySelector('#pm-maya-num').value.trim() || null,
         bank_name:           paneEl.querySelector('#pm-bank-name').value.trim() || null,
         bank_account:        paneEl.querySelector('#pm-bank-acct').value.trim() || null,
         bank_account_name:   paneEl.querySelector('#pm-bank-holder').value.trim() || null,
         crypto_enabled:      paneEl.querySelector('#pm-crypto-en').checked,
         crypto_usdt_address: addr || null,
         crypto_usdt_network: paneEl.querySelector('#pm-crypto-net').value || null,
+        gcash_qr_url:        paneEl.querySelector('#qr-gcash-url').value || null,
+        maya_qr_url:         paneEl.querySelector('#qr-maya-url').value || null,
+        bank_qr_url:         paneEl.querySelector('#qr-bank-url').value || null,
       });
       toast('Payment saved'); await loadAll();
     } catch (e) { toastError(e.message); }
   });
 
-  // CoinGecko rate (§10.6)
-  paneEl.querySelector('#pm-rate-fetch').addEventListener('click', async () => {
-    const out = paneEl.querySelector('#pm-rate-val');
-    out.textContent = '…';
-    try {
-      const r = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=tether&vs_currencies=php');
-      const j = await r.json();
-      out.textContent = '₱' + (j.tether?.php ?? '—');
-    } catch (e) {
-      out.textContent = 'fetch failed';
-    }
+  // QR uploads — one identical handler set per payment method. Each upload
+  // persists immediately to its store_settings column (like the surge pills);
+  // it does not wait for the "Save payment" button.
+  QR_METHODS.forEach(m => {
+    const fileEl   = paneEl.querySelector(`#qr-${m.key}-file`);
+    const uploadEl = paneEl.querySelector(`#qr-${m.key}-upload`);
+    const removeEl = paneEl.querySelector(`#qr-${m.key}-remove`);
+    const imgEl    = paneEl.querySelector(`#qr-${m.key}-img`);
+    const phEl     = paneEl.querySelector(`#qr-${m.key}-ph`);
+    const urlEl    = paneEl.querySelector(`#qr-${m.key}-url`);
+    const statusEl = paneEl.querySelector(`#qr-${m.key}-status`);
+    if (!fileEl) return;
+
+    let statusTimer = null;
+
+    uploadEl.addEventListener('click', () => fileEl.click());
+
+    fileEl.addEventListener('change', async (e) => {
+      const f = e.target.files[0];
+      if (!f) return;
+      clearTimeout(statusTimer);
+      statusEl.textContent = 'Uploading…';
+      statusEl.style.color = 'var(--text-muted)';
+      try {
+        const url = await uploadQR(f);
+        await saveSettings({ [m.column]: url });
+        if (state.settings) state.settings[m.column] = url;
+        urlEl.value = url;
+        imgEl.src = url;
+        imgEl.style.display = '';
+        phEl.style.display = 'none';
+        removeEl.style.display = '';
+        statusEl.textContent = '✓ QR saved';
+        statusEl.style.color = 'var(--green)';
+        statusTimer = setTimeout(() => { statusEl.textContent = ''; }, 2000);
+      } catch (err) {
+        statusEl.textContent = '✗ Upload failed: ' + (err.message || 'unknown error');
+        statusEl.style.color = 'var(--red)';
+      } finally {
+        fileEl.value = '';
+      }
+    });
+
+    removeEl.addEventListener('click', async () => {
+      if (!confirm('Remove this QR code?')) return;
+      clearTimeout(statusTimer);
+      try {
+        await saveSettings({ [m.column]: null });
+        if (state.settings) state.settings[m.column] = null;
+        urlEl.value = '';
+        imgEl.src = '';
+        imgEl.style.display = 'none';
+        phEl.style.display = 'flex';
+        removeEl.style.display = 'none';
+        statusEl.textContent = '';
+      } catch (err) {
+        statusEl.textContent = '✗ Remove failed: ' + (err.message || 'unknown error');
+        statusEl.style.color = 'var(--red)';
+      }
+    });
+  });
+
+  // CoinGecko rate (§10.6) — manual refresh + 60s auto-refresh
+  paneEl.querySelector('#pm-rate-fetch').addEventListener('click', updateUSDTRate);
+
+  // Surge multiplier — click a pill to save immediately (no Save button)
+  let surgeSavedTimer = null;
+  paneEl.querySelectorAll('.surge-pill').forEach(pill => {
+    pill.addEventListener('click', async () => {
+      const value = Number(pill.dataset.surge);
+      try {
+        await saveSettings({ delivery_rate_multiplier: value });
+        state.settings.delivery_rate_multiplier = value;
+        paneEl.querySelectorAll('.surge-pill').forEach(p => {
+          p.setAttribute('style', surgePillStyle(Number(p.dataset.surge) === value));
+        });
+        const saved = paneEl.querySelector('#surge-saved');
+        saved.style.display = '';
+        clearTimeout(surgeSavedTimer);
+        surgeSavedTimer = setTimeout(() => { saved.style.display = 'none'; }, 2000);
+      } catch (e) { toastError(e.message); }
+    });
   });
 
   // Delivery save
@@ -387,6 +725,38 @@ function bindHandlers() {
     });
   });
 
+  // Tier configuration
+  paneEl.querySelector('#tier-save').addEventListener('click', async () => {
+    const btn = paneEl.querySelector('#tier-save');
+    const rows = [...paneEl.querySelectorAll('#tier-list [data-tier-level]')];
+    const tiers = [];
+    for (const row of rows) {
+      const level = parseInt(row.dataset.tierLevel, 10);
+      const name = row.querySelector('.tc-name').value.trim();
+      if (!name) return toastWarn(`Tier L${level}: name required.`);
+      const spend = parseFloat(row.querySelector('.tc-spend').value);
+      if (Number.isNaN(spend) || spend < 0) return toastWarn(`Tier L${level}: min spend must be a non-negative number.`);
+      tiers.push({
+        tier_level: level,
+        name,
+        icon:  row.querySelector('.tc-icon').value.trim() || null,
+        min_spend: spend,
+        color: row.querySelector('.tc-color').value,
+      });
+    }
+    btn.disabled = true;
+    const sb = getSB();
+    const { error } = await sb.from('dashboard_settings').upsert({
+      key: 'TIER_CONFIG',
+      value: JSON.stringify(tiers),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'key' });
+    btn.disabled = false;
+    if (error) return toastError(error.message);
+    toast('Tiers saved.');
+    await loadAll();
+  });
+
   // Hours
   paneEl.querySelector('#h-save').addEventListener('click', async () => {
     const days = [];
@@ -425,6 +795,64 @@ function bindHandlers() {
         telegram_chat_id:   paneEl.querySelector('#n-chat').value.trim() || null,
       });
       toast('Notifications saved'); await loadAll();
+    } catch (e) { toastError(e.message); }
+  });
+
+  // Telegram test alert — sends directly via the Bot API using the
+  // values currently in the form, so it can be verified before saving.
+  paneEl.querySelector('#n-test').addEventListener('click', async () => {
+    const token  = paneEl.querySelector('#n-token').value.trim();
+    const chatId = paneEl.querySelector('#n-chat').value.trim();
+    const status = paneEl.querySelector('#n-status');
+    if (!token || !chatId) {
+      status.textContent = 'Enter bot token and chat ID first.';
+      status.style.color = 'var(--orange)';
+      return;
+    }
+    status.textContent = 'Sending…'; status.style.color = 'var(--text-muted)';
+    try {
+      const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: '✅ Test alert from MBG Dashboard',
+          disable_web_page_preview: true,
+        }),
+      });
+      const j = await res.json();
+      if (j.ok) {
+        status.textContent = 'Test sent — check Telegram.';
+        status.style.color = 'var(--green)';
+      } else {
+        status.textContent = `Telegram error: ${j.description || 'unknown'}`;
+        status.style.color = 'var(--red)';
+      }
+    } catch (e) {
+      status.textContent = e.message || 'Send failed';
+      status.style.color = 'var(--red)';
+    }
+  });
+
+  // Appearance — accent colour live preview + theme mode toggle
+  const accentInput = paneEl.querySelector('#ap-accent');
+  accentInput.addEventListener('input', () => {
+    document.documentElement.style.setProperty('--green', accentInput.value);
+    paneEl.querySelector('#ap-accent-hex').textContent = accentInput.value;
+  });
+  paneEl.querySelectorAll('.ap-mode').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const mode = btn.dataset.mode;
+      document.documentElement.dataset.theme = mode;
+      localStorage.setItem('mbg-theme-mode', mode);
+      paneEl.querySelectorAll('.ap-mode').forEach(b =>
+        b.classList.toggle('btn-ghost', b.dataset.mode !== mode));
+    });
+  });
+  paneEl.querySelector('#ap-save').addEventListener('click', async () => {
+    try {
+      await saveSettings({ theme_color: accentInput.value });
+      toast('Appearance saved'); await loadAll();
     } catch (e) { toastError(e.message); }
   });
 
@@ -523,4 +951,8 @@ export async function mount(rootPaneEl) {
   if (!mounted) mounted = true;
   await loadAll();
   render();
+}
+
+export function unmount() {
+  if (rateTimer) { clearInterval(rateTimer); rateTimer = null; }
 }

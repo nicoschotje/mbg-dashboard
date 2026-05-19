@@ -41,6 +41,10 @@ export function applyBranding() {
   document.title = `${name} — Dashboard`;
   setText('brand-name', shortBrand(name));
   setText('login-store-name', name);
+
+  // Accent colour — overrides the brand --green token when configured.
+  const accent = AppState.settings?.theme_color;
+  if (accent) document.documentElement.style.setProperty('--green', accent);
 }
 
 // Sidebar brand cell is narrow — drop trailing possessive's content if too long.

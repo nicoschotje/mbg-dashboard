@@ -36,3 +36,13 @@
   --st-completed-fg: #00C9A7;  --st-completed-bg: #003D32;
   --st-cancelled-fg: #FF4757;  --st-cancelled-bg: #3D0008;
 }
+
+/* Light mode — display preference toggled via Settings → Appearance */
+[data-theme="light"] {
+  --bg-base:      #F5F5F0;
+  --bg-card:      #FFFFFF;
+  --bg-hover:     #ECECE6;
+  --text-primary: #1A1A1A;
+  --text-muted:   #5A6B64;
+  --border:       #D8DEDB;
+}

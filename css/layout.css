@@ -114,6 +114,22 @@ input, select, textarea {
 }
 .header-meta button.lock:hover { color: var(--orange); border-color: var(--orange); }
 
+.header-meta button.store-toggle {
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 999px;
+  padding: 5px 12px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.header-meta button.store-toggle.open    { color: #27AE60; border-color: #27AE60; }
+.header-meta button.store-toggle.closed  { color: #E74C3C; border-color: #E74C3C; }
+
 /* Surface tabs row inside sidebar */
 .nav-section-label {
   padding: 14px 18px 6px;
