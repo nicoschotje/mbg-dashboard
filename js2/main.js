@@ -136,17 +136,28 @@ async function handleLogin(role, session) {
 const surfaceCache = {};
 let _activeSurface = 'operations';
 
-async function showSurface(name, role) {
-  if (name === _activeSurface) return;
+function setActiveSurfaceNav(name) {
+  document.querySelectorAll('.nav-item[data-surface]').forEach(n =>
+    n.classList.toggle('active', n.dataset.surface === name));
+}
 
+// Settings nav item — Store Settings lives under the Content surface.
+async function openSettings(role) {
+  if (role === 'sales') { toast('Sales role: Operations only.', 'warn'); return; }
+  await showSurface('content', role);
+  document.querySelector('.nav-item[data-cmodule="settings"]')?.click();
+  setActiveSurfaceNav('settings');
+}
+
+async function showSurface(name, role) {
   // Sales role is allowed in Operations only (blueprint §10.10)
   if (role === 'sales' && name !== 'operations') {
     toast('Sales role: Operations only.', 'warn');
     return;
   }
 
-  document.querySelectorAll('.nav-item[data-surface]').forEach(n =>
-    n.classList.toggle('active', n.dataset.surface === name));
+  setActiveSurfaceNav(name);
+  if (name === _activeSurface) return;
   document.querySelectorAll('.surface').forEach(s =>
     s.classList.toggle('active', s.id === `surface-${name}`));
   document.querySelectorAll('.nav-group[data-surface-group]').forEach(g =>
@@ -172,17 +183,28 @@ function wireSurfaceRouter(role) {
   if (wireSurfaceRouter._done) return;
   wireSurfaceRouter._done = true;
 
-  // Sales role: hide Content + Intelligence surface tabs entirely
+  // Sales role: hide Content / Intelligence / Settings, keep Home + Operations
   if (role === 'sales') {
     document.querySelectorAll('.nav-item[data-surface]').forEach(node => {
-      if (node.dataset.surface !== 'operations') node.style.display = 'none';
+      if (node.dataset.surface !== 'operations' && node.dataset.surface !== 'home') {
+        node.style.display = 'none';
+      }
     });
-    return;
   }
 
   document.querySelectorAll('.nav-item[data-surface]').forEach(node => {
     if (node.classList.contains('disabled-soon')) return;
-    node.addEventListener('click', () => showSurface(node.dataset.surface, role));
+    node.addEventListener('click', () => {
+      const surface = node.dataset.surface;
+      if (surface === 'home') {
+        setActiveSurfaceNav('home');
+        showLanding(role);
+      } else if (surface === 'settings') {
+        openSettings(role);
+      } else {
+        showSurface(surface, role);
+      }
+    });
   });
 }
 
@@ -216,12 +238,6 @@ document.querySelectorAll('.landing-card').forEach(card => {
     const role = rolePill.textContent;
     await enterSurface(name, role);
   });
-});
-
-// Home button in sidebar
-document.getElementById('nav-home-btn').addEventListener('click', () => {
-  const role = rolePill.textContent;
-  showLanding(role);
 });
 
 pinSubmit.addEventListener('click', attemptLogin);

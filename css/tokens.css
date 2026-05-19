@@ -1,48 +1,81 @@
-/* MBG Design Tokens — extracted verbatim from blueprint §2 */
+/* MBG Design Tokens — redesign 2026-05
+ * Existing token names are preserved (the JS modules reference them widely);
+ * only their values move to the new palette. New tokens are added alongside.
+ */
 :root {
   /* Background */
-  --bg-base:      #070B0A;
-  --bg-card:      #0F1614;
-  --bg-hover:     #161E1C;
+  --bg-page:      #070a09;
+  --bg-base:      #070a09;
+  --bg-surface:   #0a0f0d;
+  --bg-card:      #101614;
+  --card:         #101614;
+  --bg-hover:     #161e1b;
 
-  /* Brand */
-  --green:        #00C9A7;
-  --green-dim:    #007A66;
-  --orange:       #FF6B35;
-  --red:          #FF4757;
-  --yellow:       #FFD700;
+  /* Brand / accent */
+  --accent:       #26d4a8;
+  --accent-dim:   #1a9176;
+  --green:        #26d4a8;
+  --green-dim:    #1a9176;
+  --orange:       #fb9d3c;
+  --red:          #f87171;
+  --yellow:       #fbbf24;
+
+  /* Semantic */
+  --success:      #26d4a8;
+  --warning:      #fbbf24;
+  --danger:       #f87171;
+  --info:         #60a5fa;
 
   /* Text */
-  --text-primary: #E8F5F0;
-  --text-muted:   #8FA89F;
+  --text-primary:   #f5f7f6;
+  --text-secondary: #9aa5a0;
+  --text-muted:     #9aa5a0;
+  --text-faint:     #6b7672;
 
   /* Structure */
-  --border:       #1E2E2A;
+  --border:       #1c2421;
+  --card-border:  #1c2421;
   --sidebar-w:    240px;
   --header-h:     60px;
+  --nav-h:        66px;
+
+  /* Radii + elevation */
+  --radius-card:  14px;
+  --radius-input: 10px;
+  --shadow-card:  0 6px 14px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.03);
+  --shadow-hero:  0 10px 24px rgba(0,0,0,0.5);
+  --gradient-hero: linear-gradient(150deg, #173a30 0%, #0f1f1b 60%, #101714 100%);
+  --gradient-hero-purple: linear-gradient(150deg, #2a1a3f 0%, #1a1224 60%, #10141a 100%);
 
   /* CRM tier colors */
-  --tier-1: #8FA89F;
-  --tier-2: #CD7F32;
-  --tier-3: #C0C0C0;
-  --tier-4: #FFD700;
-  --tier-5: #00D4FF;
+  --tier-1: #9aa5a0;
+  --tier-2: #cd7f32;
+  --tier-3: #c0c0c0;
+  --tier-4: #fbbf24;
+  --tier-5: #60a5fa;
 
-  /* Order status palette (blueprint §10.1) */
-  --st-pending-fg:   #FFD700;  --st-pending-bg:   #3D3300;
-  --st-confirmed-fg: #4A9EFF;  --st-confirmed-bg: #00204D;
-  --st-preparing-fg: #FF6B35;  --st-preparing-bg: #3D1500;
-  --st-out-fg:       #00C9A7;  --st-out-bg:       #003D32;
-  --st-completed-fg: #00C9A7;  --st-completed-bg: #003D32;
-  --st-cancelled-fg: #FF4757;  --st-cancelled-bg: #3D0008;
+  /* Order status palette */
+  --st-pending-fg:   #fbbf24;  --st-pending-bg:   #3a3008;
+  --st-confirmed-fg: #60a5fa;  --st-confirmed-bg: #0d2444;
+  --st-preparing-fg: #fb9d3c;  --st-preparing-bg: #3a2208;
+  --st-out-fg:       #26d4a8;  --st-out-bg:       #0c352c;
+  --st-completed-fg: #26d4a8;  --st-completed-bg: #0c352c;
+  --st-cancelled-fg: #f87171;  --st-cancelled-bg: #3a1414;
 }
 
 /* Light mode — display preference toggled via Settings → Appearance */
 [data-theme="light"] {
-  --bg-base:      #F5F5F0;
-  --bg-card:      #FFFFFF;
-  --bg-hover:     #ECECE6;
-  --text-primary: #1A1A1A;
-  --text-muted:   #5A6B64;
-  --border:       #D8DEDB;
+  --bg-page:      #f4f6f5;
+  --bg-base:      #f4f6f5;
+  --bg-surface:   #ffffff;
+  --bg-card:      #ffffff;
+  --card:         #ffffff;
+  --bg-hover:     #eceeed;
+  --text-primary:   #16201c;
+  --text-secondary: #5a6b64;
+  --text-muted:     #5a6b64;
+  --text-faint:     #8a978f;
+  --border:       #d8deda;
+  --card-border:  #d8deda;
+  --shadow-card:  0 4px 12px rgba(0,0,0,0.10);
 }
