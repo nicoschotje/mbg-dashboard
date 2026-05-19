@@ -44,6 +44,30 @@
     </div>
   </div>
 
+  <div id="landing-screen" class="landing-screen hidden">
+    <div class="landing-header">
+      <span class="dot"></span>
+      <span id="landing-store-name" class="landing-store-name">&nbsp;</span>
+    </div>
+    <div class="landing-grid">
+      <div class="landing-card" data-surface="operations">
+        <div class="landing-icon">⚡</div>
+        <div class="landing-title">Operations</div>
+        <div class="landing-sub">Orders · Inventory · Customers</div>
+      </div>
+      <div class="landing-card" id="landing-content-card" data-surface="content">
+        <div class="landing-icon">📦</div>
+        <div class="landing-title">Content</div>
+        <div class="landing-sub">Products · Categories · Banners · Settings</div>
+      </div>
+      <div class="landing-card" id="landing-intelligence-card" data-surface="intelligence">
+        <div class="landing-icon">📊</div>
+        <div class="landing-title">Intelligence</div>
+        <div class="landing-sub">Analytics · Reports · CRM</div>
+      </div>
+    </div>
+  </div>
+
   <!-- Brand -->
   <div class="brand">
     <span class="dot"></span><span class="label" id="brand-name">&nbsp;</span>
@@ -51,15 +75,8 @@
 
   <!-- Sidebar -->
   <nav class="sidebar" id="sidebar">
-    <div class="nav-section-label">Surface</div>
-    <div class="nav-item active" data-surface="operations">
-      <span class="ico">⚡</span><span class="label">Operations</span>
-    </div>
-    <div class="nav-item" data-surface="content">
-      <span class="ico">📦</span><span class="label">Content</span>
-    </div>
-    <div class="nav-item" data-surface="intelligence">
-      <span class="ico">📊</span><span class="label">Intelligence</span>
+    <div class="nav-home-btn" id="nav-home-btn">
+      <span class="ico">🏠</span><span class="label">Home</span>
     </div>
 
     <!-- Operations modules (Surface A nav group) -->
