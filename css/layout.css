@@ -275,6 +275,11 @@ input, select, textarea {
 
 /* Mobile: bottom nav bar showing icon + label */
 @media (max-width: 720px) {
+  html, body {
+    overflow-x: hidden;
+    max-width: 100vw;
+  }
+
   body {
     grid-template-columns: 1fr;
     grid-template-rows: var(--header-h) 1fr;
@@ -282,7 +287,79 @@ input, select, textarea {
       "header"
       "main";
   }
+
   .brand { display: none; }
+
+  .header {
+    padding: 0 12px;
+    overflow: hidden;
+  }
+
+  .header h1 {
+    font-size: 13px;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 130px;
+    flex-shrink: 1;
+  }
+
+  .header-meta {
+    gap: 5px;
+    flex-shrink: 0;
+  }
+
+  .header-meta .role-pill {
+    font-size: 9px;
+    padding: 3px 6px;
+  }
+
+  .header-meta button.lock,
+  .header-meta button.store-toggle,
+  .header-meta button.mobile-preview-toggle {
+    font-size: 10px;
+    padding: 4px 7px;
+  }
+
+  .header-meta #rt-status {
+    display: none;
+  }
+
+  .main {
+    padding: 12px;
+    padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+    overflow-x: hidden;
+    max-width: 100vw;
+    box-sizing: border-box;
+  }
+
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 14px;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .kpi {
+    min-width: 0;
+    padding: 12px;
+    box-sizing: border-box;
+  }
+
+  .kpi-value {
+    font-size: 18px;
+  }
+
+  .kpi-sub {
+    font-size: 10px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
   .sidebar {
     position: fixed;
     bottom: 0; left: 0; right: 0;
@@ -299,10 +376,13 @@ input, select, textarea {
     background: var(--bg-card);
     scrollbar-width: none;
   }
+
   .sidebar::-webkit-scrollbar { display: none; }
+
   .nav-group { display: none; }
   .nav-group.active { display: contents; }
   .nav-section-label { display: none; }
+
   .nav-item {
     display: flex;
     flex-direction: column;
@@ -317,11 +397,14 @@ input, select, textarea {
     border-top: 2px solid transparent;
     text-align: center;
   }
+
   .nav-item.active {
     border-left-color: transparent;
     border-top-color: var(--green);
   }
+
   .nav-item .ico { font-size: 18px; }
+
   .nav-item span.label {
     display: block;
     font-size: 10px;
@@ -331,63 +414,10 @@ input, select, textarea {
     text-overflow: ellipsis;
     max-width: 68px;
   }
-  .brand .label { display: none; }
-  .main {
-    padding: 14px;
-    padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
-  }
+
   #toast-container {
     bottom: calc(72px + env(safe-area-inset-bottom, 0px));
     right: 12px;
-  }
-
-  body { overflow-x: hidden; }
-  .main { overflow-x: hidden; max-width: 100vw; }
-
-  .header h1 {
-    font-size: 13px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 120px;
-  }
-
-  .kpi-grid {
-    grid-template-columns: 1fr 1fr;
-    gap: 10px;
-  }
-  .kpi {
-    min-width: 0;
-    padding: 12px 14px;
-  }
-  .kpi-value { font-size: 20px; }
-
-  .order-card, .card {
-    max-width: 100%;
-    box-sizing: border-box;
-    overflow: hidden;
-  }
-
-  .inv-table, table {
-    display: block;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    max-width: 100%;
-  }
-
-  .header-meta {
-    gap: 6px;
-    flex-shrink: 0;
-  }
-  .header-meta .role-pill {
-    font-size: 9px;
-    padding: 3px 7px;
-  }
-  .header-meta button.lock,
-  .header-meta button.store-toggle,
-  .header-meta button.mobile-preview-toggle {
-    font-size: 10px;
-    padding: 4px 8px;
   }
 }
 

@@ -444,14 +444,128 @@ label.field-label {
   background: var(--bg-hover);
 }
 
-/* ── Mobile: stack filter rows so nothing bleeds off-screen ───────────────── */
+/* ── Mobile: fully contained layout, no horizontal overflow ───────────────── */
 @media (max-width: 720px) {
+  /* Force all direct children of .main to fit within viewport */
+  .main > * {
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  /* Filter row: stack all filters vertically */
   .filter-row {
+    display: flex;
     flex-direction: column;
     gap: 8px;
-  }
-  .filter-row > * {
     width: 100%;
+    box-sizing: border-box;
+  }
+
+  .filter-row > * {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    flex: none !important;
+  }
+
+  /* Order cards: full width, vertical layout */
+  .order-card {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
+  }
+
+  /* Order card top row: order number left, price right — both must fit */
+  .order-card .order-header,
+  .order-card .order-top,
+  .order-card .order-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  /* Price badge — shrink font if needed, never overflow */
+  .order-card .order-total,
+  .order-card .price {
+    font-size: 14px;
+    flex-shrink: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Status badge — wrap it below if no room */
+  .order-card .status-badge,
+  .order-card .badge,
+  .order-card [class*="status"] {
+    flex-shrink: 0;
+    font-size: 9px;
+    padding: 2px 7px;
+    white-space: nowrap;
+  }
+
+  /* Action buttons row: wrap onto multiple lines if needed */
+  .order-card .order-actions,
+  .order-card .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    width: 100%;
+    box-sizing: border-box;
+    margin-top: 8px;
+  }
+
+  .order-card .order-actions > button,
+  .order-card .actions > button {
+    flex: 1 1 auto;
+    min-width: 70px;
+    font-size: 11px;
+    padding: 7px 8px;
+    box-sizing: border-box;
+    white-space: nowrap;
+  }
+
+  /* Inventory table: horizontal scroll container */
+  .inv-table,
+  table {
+    display: block;
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    box-sizing: border-box;
+  }
+
+  /* Module tabs: scrollable row, never wraps */
+  .module-tabs {
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .module-tabs::-webkit-scrollbar { display: none; }
+
+  .module-tabs button {
+    white-space: nowrap;
+    flex-shrink: 0;
+    font-size: 12px;
+    padding: 8px 12px;
+  }
+
+  /* Cards in general */
+  .card {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  /* Input and select: full width on mobile */
+  input, select, textarea {
     max-width: 100%;
     box-sizing: border-box;
   }
