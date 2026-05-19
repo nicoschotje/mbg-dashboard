@@ -340,6 +340,55 @@ input, select, textarea {
     bottom: calc(72px + env(safe-area-inset-bottom, 0px));
     right: 12px;
   }
+
+  body { overflow-x: hidden; }
+  .main { overflow-x: hidden; max-width: 100vw; }
+
+  .header h1 {
+    font-size: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 120px;
+  }
+
+  .kpi-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .kpi {
+    min-width: 0;
+    padding: 12px 14px;
+  }
+  .kpi-value { font-size: 20px; }
+
+  .order-card, .card {
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
+  }
+
+  .inv-table, table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
+  }
+
+  .header-meta {
+    gap: 6px;
+    flex-shrink: 0;
+  }
+  .header-meta .role-pill {
+    font-size: 9px;
+    padding: 3px 7px;
+  }
+  .header-meta button.lock,
+  .header-meta button.store-toggle,
+  .header-meta button.mobile-preview-toggle {
+    font-size: 10px;
+    padding: 4px 8px;
+  }
 }
 
 /* ── Mobile preview toggle button ────────────────────────────────────────── */
