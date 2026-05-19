@@ -59,27 +59,77 @@ function hideLogin() {
   pinErr.textContent = '';
 }
 
+function showLanding(role) {
+  const landing = document.getElementById('landing-screen');
+  const brand = document.querySelector('.brand');
+  const sidebar = document.getElementById('sidebar');
+  const main = document.getElementById('main');
+  const header = document.querySelector('.header');
+
+  landing.classList.remove('hidden');
+  brand.style.display = 'none';
+  sidebar.style.display = 'none';
+  main.style.display = 'none';
+  header.style.display = 'none';
+
+  // Hide intelligence card for non-owners (future: keep for owner only)
+  const intelligenceCard = document.getElementById('landing-intelligence-card');
+  const contentCard = document.getElementById('landing-content-card');
+  if (role === 'sales') {
+    if (intelligenceCard) intelligenceCard.style.display = 'none';
+    if (contentCard) contentCard.style.display = 'none';
+  }
+}
+
+function hideLanding() {
+  const landing = document.getElementById('landing-screen');
+  const brand = document.querySelector('.brand');
+  const sidebar = document.getElementById('sidebar');
+  const main = document.getElementById('main');
+  const header = document.querySelector('.header');
+
+  landing.classList.add('hidden');
+  brand.style.display = '';
+  sidebar.style.display = '';
+  main.style.display = '';
+  header.style.display = '';
+}
+
+async function enterSurface(name, role) {
+  hideLanding();
+  const surface = await import('./surfaces/operations.js');
+  await surface.init({ role });
+  wireSurfaceRouter(role);
+  await showSurface(name, role);
+}
+
 async function handleLogin(role, session) {
   rolePill.textContent = role;
   rolePill.style.color = role === 'owner' ? 'var(--green)' : 'var(--orange)';
 
-  // Load store branding/config — owner may have rebranded since last session
   await loadStoreSettings();
   renderStoreToggle();
 
-  // Subscribe to realtime — sales gets limited subscription
+  // Set landing store name
+  const landingName = document.getElementById('landing-store-name');
+  if (landingName && AppState.settings?.store_name) {
+    landingName.textContent = AppState.settings.store_name;
+  }
+
   subscribeRealtime(role);
 
-  // Start idle timer (30 min)
   startIdleTimer((reason) => {
     unsubscribeRealtime();
+    hideLanding();
     showLogin(reason === 'idle' ? 'Locked due to inactivity.' : '');
   });
 
-  // Lazy import Surface A and wire surface router
-  const surface = await import('./surfaces/operations.js');
-  await surface.init({ role });
-  wireSurfaceRouter(role);
+  // Sales role: skip landing, go straight to Operations
+  if (role === 'sales') {
+    await enterSurface('operations', role);
+  } else {
+    showLanding(role);
+  }
 }
 
 /* ---------- Surface router (Operations / Content / Intelligence) ---------- */
@@ -158,6 +208,21 @@ async function attemptLogin() {
     pinSubmit.disabled = false;
   }
 }
+
+// Landing card clicks
+document.querySelectorAll('.landing-card').forEach(card => {
+  card.addEventListener('click', async () => {
+    const name = card.dataset.surface;
+    const role = rolePill.textContent;
+    await enterSurface(name, role);
+  });
+});
+
+// Home button in sidebar
+document.getElementById('nav-home-btn').addEventListener('click', () => {
+  const role = rolePill.textContent;
+  showLanding(role);
+});
 
 pinSubmit.addEventListener('click', attemptLogin);
 pinInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') attemptLogin(); });
