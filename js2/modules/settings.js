@@ -168,6 +168,15 @@ function render() {
     <div class="card" style="margin-bottom:14px">
       <h3 style="margin:0 0 10px;font-family:'Syne',sans-serif">Payment</h3>
 
+      <div class="setting-toggle-row">
+        <label class="toggle-label">GCash payments</label>
+        <label class="toggle-switch">
+          <input type="checkbox" id="gcash-enabled-toggle" />
+          <span class="toggle-slider"></span>
+        </label>
+        <span class="toggle-status" id="gcash-enabled-status">Enabled</span>
+      </div>
+
       <div style="font-weight:600;margin-bottom:6px">GCash</div>
       <div class="field-row">
         <div style="flex:1 1 180px">
@@ -180,6 +189,15 @@ function render() {
         </div>
       </div>
       ${qrUploadHTML(QR_METHODS[0], gcashQR)}
+
+      <div class="setting-toggle-row">
+        <label class="toggle-label">Maya payments</label>
+        <label class="toggle-switch">
+          <input type="checkbox" id="maya-enabled-toggle" />
+          <span class="toggle-slider"></span>
+        </label>
+        <span class="toggle-status" id="maya-enabled-status">Enabled</span>
+      </div>
 
       <div style="font-weight:600;margin:14px 0 6px">Maya</div>
       <div class="field-row">
@@ -663,6 +681,32 @@ function bindHandlers() {
         statusEl.style.color = 'var(--red)';
       }
     });
+  });
+
+  // GCash / Maya payment enable toggles — save immediately, no Save button
+  const settings = state.settings;
+  const gcashToggle = paneEl.querySelector('#gcash-enabled-toggle');
+  const mayaToggle  = paneEl.querySelector('#maya-enabled-toggle');
+  gcashToggle.checked = settings.gcash_enabled !== false;
+  mayaToggle.checked  = settings.maya_enabled !== false;
+  paneEl.querySelector('#gcash-enabled-status').textContent = settings.gcash_enabled !== false ? 'Enabled' : 'Disabled';
+  paneEl.querySelector('#maya-enabled-status').textContent  = settings.maya_enabled !== false ? 'Enabled' : 'Disabled';
+
+  gcashToggle.addEventListener('change', async (e) => {
+    const val = e.target.checked;
+    paneEl.querySelector('#gcash-enabled-status').textContent = val ? 'Enabled' : 'Disabled';
+    try {
+      await saveSettings({ gcash_enabled: val });
+      settings.gcash_enabled = val;
+    } catch (err) { toastError(err.message); }
+  });
+  mayaToggle.addEventListener('change', async (e) => {
+    const val = e.target.checked;
+    paneEl.querySelector('#maya-enabled-status').textContent = val ? 'Enabled' : 'Disabled';
+    try {
+      await saveSettings({ maya_enabled: val });
+      settings.maya_enabled = val;
+    } catch (err) { toastError(err.message); }
   });
 
   // CoinGecko rate (§10.6) — manual refresh + 60s auto-refresh
