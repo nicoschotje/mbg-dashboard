@@ -156,7 +156,7 @@ function render() {
       <label class="field-label" style="margin-top:10px">Logo</label>
       <div style="display:flex;gap:10px;align-items:center">
         <img id="p-logo-prev" src="${escapeHTML(s.store_logo_url || '')}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;background:var(--bg-base);${s.store_logo_url ? '' : 'display:none'}"/>
-        <input type="file" id="p-logo" accept="image/png,image/jpeg,image/jpg,image/webp"/>
+        <input type="file" id="p-logo" accept="image/jpeg,image/png,image/webp,image/gif"/>
         <span id="p-logo-status" style="color:var(--text-muted);font-size:12px"></span>
       </div>
       <input type="hidden" id="p-logo-url" value="${escapeHTML(s.store_logo_url || '')}"/>
@@ -491,7 +491,7 @@ function qrUploadHTML(method, url) {
           <span id="qr-${k}-status" style="font-size:12px;color:var(--text-muted)"></span>
         </div>
       </div>
-      <input type="file" id="qr-${k}-file" accept="image/png,image/jpeg,image/jpg,image/webp" style="display:none"/>
+      <input type="file" id="qr-${k}-file" accept="image/jpeg,image/png,image/webp,image/gif" style="display:none"/>
       <input type="hidden" id="qr-${k}-url" value="${escapeHTML(url)}"/>
     </div>
   `;
