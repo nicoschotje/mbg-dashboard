@@ -85,8 +85,8 @@ function tierBadge(phone) {
 
 function orderCardHTML(o) {
   const phone = o.customer_phone || o.contact || '';
-  const items = Array.isArray(o.order_items) ? o.order_items : [];
-  const itemCount = items.reduce((acc, it) => acc + (parseInt(it.qty, 10) || 1), 0);
+  const items = Array.isArray(o.items) ? o.items : [];
+  const itemCount = items.length;
   const status = o.order_status || 'pending';
   return `
     <article class="order-card" data-id="${escapeHTML(o.id)}">
@@ -297,7 +297,7 @@ function paymentReceiptHTML(order) {
 
 function openDetail(order) {
   if (!modalBackdrop) return;
-  const items = Array.isArray(order.order_items) ? order.order_items : [];
+  const items = Array.isArray(order.items) ? order.items : [];
   const phone = order.customer_phone || order.contact || '';
   modalBody.innerHTML = `
     <h2>Order #${shortId(order.id)}</h2>
@@ -315,12 +315,22 @@ function openDetail(order) {
 
     <div class="card" style="margin-bottom:14px">
       <div style="font-weight:600;margin-bottom:8px">Items</div>
-      ${items.length ? items.map(it => `
-        <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed var(--border);font-size:13px">
-          <span>${escapeHTML(it.name || '—')} × ${escapeHTML(String(it.qty || 1))}</span>
-          <span style="font-family:'JetBrains Mono',monospace">${formatCurrency((it.price || 0) * (it.qty || 1))}</span>
-        </div>
-      `).join('') : '<div class="empty">No items.</div>'}
+      ${items.length ? items.map(it => {
+        const qty   = it.quantity != null ? it.quantity : (it.qty || 1);
+        const price = parseFloat(it.price) || 0;
+        const thumb = it.image_url
+          ? `<img src="${escapeHTML(it.image_url)}" alt="" style="width:40px;height:40px;border-radius:6px;object-fit:cover;border:1px solid var(--border);flex:none"/>`
+          : `<div style="width:40px;height:40px;border-radius:6px;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:20px;flex:none">${escapeHTML(it.emoji || '🌿')}</div>`;
+        return `
+        <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px dashed var(--border)">
+          ${thumb}
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:600;font-size:13px">${escapeHTML(it.name || '—')}</div>
+            <div style="color:var(--text-muted);font-size:12px;margin-top:2px">${escapeHTML(String(qty))} × ${formatCurrency(price)}</div>
+          </div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:13px">${formatCurrency(price * qty)}</div>
+        </div>`;
+      }).join('') : '<div class="empty">No items.</div>'}
       <div style="margin-top:10px;display:flex;justify-content:space-between;font-size:13px;color:var(--text-muted)">
         <span>Subtotal</span><span>${formatCurrency(order.subtotal)}</span>
       </div>
@@ -376,7 +386,7 @@ function openDetail(order) {
 }
 
 function printReceipt(order) {
-  const items = Array.isArray(order.order_items) ? order.order_items : [];
+  const items = Array.isArray(order.items) ? order.items : [];
   const settings = AppState.settings || {};
   const storeName = settings.store_name || "Mr. Beanie's Greenies";
   const storeFooter = [settings.store_phone, settings.store_address].filter(Boolean).join(' · ');
@@ -394,10 +404,12 @@ function printReceipt(order) {
       <div class="muted">Order #${shortId(order.id)} · ${escapeHTML(formatDate(order.created_at))}</div>
       <p>${escapeHTML(order.customer_name || '')}<br>${escapeHTML(order.customer_phone || order.contact || '')}<br>${escapeHTML(order.delivery_address || '')}</p>
       <table>
-        ${items.map(it => `
-          <tr><td>${escapeHTML(it.name || '')} × ${escapeHTML(String(it.qty || 1))}</td>
-              <td style="text-align:right">${formatCurrency((it.price || 0) * (it.qty || 1))}</td></tr>
-        `).join('')}
+        ${items.map(it => {
+          const qty = it.quantity != null ? it.quantity : (it.qty || 1);
+          return `
+          <tr><td>${escapeHTML(it.name || '')} × ${escapeHTML(String(qty))}</td>
+              <td style="text-align:right">${formatCurrency((parseFloat(it.price) || 0) * qty)}</td></tr>
+        `;}).join('')}
         <tr><td>Subtotal</td><td style="text-align:right">${formatCurrency(order.subtotal)}</td></tr>
         <tr><td>Delivery</td><td style="text-align:right">${formatCurrency(order.delivery_fee)}</td></tr>
         ${order.discount_amount ? `<tr><td>Discount</td><td style="text-align:right">-${formatCurrency(order.discount_amount)}</td></tr>` : ''}

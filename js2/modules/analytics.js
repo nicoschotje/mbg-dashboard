@@ -93,7 +93,7 @@ async function loadAll() {
   const prev = previousBounds(bounds);
 
   // §11.10 exact column list
-  const cols = 'id, created_at, total, subtotal, delivery_fee, discount_amount, order_status, payment_method, order_items, customer_phone, customer_name, contact, delivery_zone';
+  const cols = 'id, created_at, total, subtotal, delivery_fee, discount_amount, order_status, payment_method, items, customer_phone, customer_name, contact, delivery_zone';
 
   const [orders, prevOrders, products, costHistory] = await Promise.all([
     sb.from('orders').select(cols)
@@ -170,7 +170,7 @@ function compute(d, bounds, isPrev = false) {
       c.totalDel  += parseFloat(o.delivery_fee) || 0;
       c.totalDisc += parseFloat(o.discount_amount) || 0;
       // COGS — iterate items, multiply cost_price × qty
-      (Array.isArray(o.order_items) ? o.order_items : []).forEach(item => {
+      (Array.isArray(o.items) ? o.items : []).forEach(item => {
         const cost = costLookup[item.product_id] || 0;
         const qty  = parseInt(item.qty, 10) || 1;
         c.cogs += cost * qty;
@@ -180,7 +180,7 @@ function compute(d, bounds, isPrev = false) {
     if (!isCancelled) c.orderCount += 1;
 
     // Per-product / per-category / per-payment / time buckets — all orders
-    (Array.isArray(o.order_items) ? o.order_items : []).forEach(item => {
+    (Array.isArray(o.items) ? o.items : []).forEach(item => {
       const name = item.name || productNameLookup[item.product_id] || 'Unknown';
       const qty  = parseInt(item.qty, 10) || 1;
       const lineRev = (parseFloat(item.price) || 0) * qty;
