@@ -199,3 +199,21 @@ applyBranding();
   }
   showLogin();
 })();
+
+/* ── Mobile preview toggle ────────────────────────────────────────────────── */
+const mobilePreviewBtn = document.getElementById('mobile-preview-btn');
+
+function setMobilePreview(on) {
+  document.documentElement.classList.toggle('mobile-preview', on);
+  mobilePreviewBtn.classList.toggle('active', on);
+  mobilePreviewBtn.title = on ? 'Exit mobile preview' : 'Preview mobile layout';
+  localStorage.setItem('mbg-mobile-preview', on ? '1' : '');
+}
+
+mobilePreviewBtn.addEventListener('click', () => {
+  setMobilePreview(!document.documentElement.classList.contains('mobile-preview'));
+});
+
+if (localStorage.getItem('mbg-mobile-preview') === '1') {
+  setMobilePreview(true);
+}
