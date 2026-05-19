@@ -91,7 +91,7 @@ async function fetchOrders() {
   const sb = getSB();
   const { start, end } = bounds();
   const { data, error } = await sb.from('orders')
-    .select('id, created_at, customer_name, customer_phone, contact, total, subtotal, delivery_fee, discount_amount, order_status, payment_method, payment_status, delivery_zone, order_items')
+    .select('id, created_at, customer_name, customer_phone, contact, total, subtotal, delivery_fee, discount_amount, order_status, payment_method, payment_status, delivery_zone, items')
     .gte('created_at', start.toISOString())
     .lte('created_at', end.toISOString())
     .order('created_at', { ascending: true });
@@ -129,7 +129,7 @@ async function exportOrdersCSV() {
       payment_status: o.payment_status || '',
       order_status: o.order_status || '',
       delivery_zone: o.delivery_zone || '',
-      item_count: Array.isArray(o.order_items) ? o.order_items.length : 0,
+      item_count: Array.isArray(o.items) ? o.items.length : 0,
     }));
     exportCSV(rows, `revenue-${Date.now()}.csv`);
   } catch (e) { toastError(e.message); }
@@ -196,7 +196,7 @@ async function exportPLCSV() {
     const sb = getSB();
     const { start, end } = bounds();
     const [ordersRes, productsRes] = await Promise.all([
-      sb.from('orders').select('order_status, total, delivery_fee, discount_amount, order_items')
+      sb.from('orders').select('order_status, total, delivery_fee, discount_amount, items')
         .gte('created_at', start.toISOString()).lte('created_at', end.toISOString()),
       sb.from('products').select('id, cost_price'),
     ]);
@@ -212,7 +212,7 @@ async function exportPLCSV() {
     const totalDisc = completed.reduce((a, o) => a + (parseFloat(o.discount_amount) || 0), 0);
     let cogs = 0;
     completed.forEach(o => {
-      (Array.isArray(o.order_items) ? o.order_items : []).forEach(it => {
+      (Array.isArray(o.items) ? o.items : []).forEach(it => {
         cogs += (cost[it.product_id] || 0) * (parseInt(it.qty, 10) || 1);
       });
     });
