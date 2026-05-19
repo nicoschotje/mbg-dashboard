@@ -17,10 +17,20 @@ let modalBody = null;
 const state = {
   clients: [],
   importLog: [],
+  loadError: false,
   activeTab: 'dashboard',
   sortBy: 'rfm_score',
   filterTag: 'all',
 };
+
+function emptyStateHTML(icon, title, sub) {
+  return `
+    <div class="empty-state">
+      <div class="empty-icon">${icon}</div>
+      <div class="empty-title">${title}</div>
+      <div class="empty-sub">${sub}</div>
+    </div>`;
+}
 
 const ACTION_LABELS = {
   reactivate_now:     'Reactivate Now',
@@ -55,14 +65,22 @@ const TAB_LABELS = {
 
 async function loadAll() {
   const sb = getSB();
-  const [clients, importLog] = await Promise.all([
-    sb.from('mbg_client_intelligence').select('*').eq('is_active', true).order('rfm_score', { ascending: false }),
-    sb.from('mbg_import_log').select('*').order('created_at', { ascending: false }).limit(20),
-  ]);
-  if (clients.error)   toastError('Clients load: ' + clients.error.message);
-  if (importLog.error) toastError('Import log load: ' + importLog.error.message);
-  state.clients   = clients.data   || [];
-  state.importLog = importLog.data || [];
+  state.loadError = false;
+  try {
+    const [clients, importLog] = await Promise.all([
+      sb.from('mbg_client_intelligence').select('*').order('lifetime_score', { ascending: false }),
+      sb.from('mbg_import_log').select('*').order('started_at', { ascending: false }).limit(20),
+    ]);
+    if (clients.error)   throw clients.error;
+    if (importLog.error) throw importLog.error;
+    state.clients   = clients.data   || [];
+    state.importLog = importLog.data || [];
+  } catch (e) {
+    state.loadError = true;
+    state.clients   = [];
+    state.importLog = [];
+    console.warn('MBG Clients load failed:', e?.message || e);
+  }
 }
 
 /* ---------- Tab shell ---------- */
@@ -108,6 +126,11 @@ function renderActiveTab() {
 
 function renderDashboard() {
   const host = paneEl.querySelector('#ip-dashboard');
+  if (state.loadError) {
+    host.innerHTML = emptyStateHTML('📊', "Couldn't load client data",
+      'There was a problem reaching the client intelligence service. Tap Refresh to try again.');
+    return;
+  }
   const total = state.clients.length;
   const totalRev = state.clients.reduce((a, c) => a + (parseFloat(c.total_revenue) || 0), 0);
   const atRisk = state.clients.filter(c => (c.days_since_last || 0) > 30).length;
@@ -143,6 +166,11 @@ function renderDashboard() {
 
 function renderList() {
   const host = paneEl.querySelector('#ip-list');
+  if (state.loadError) {
+    host.innerHTML = emptyStateHTML('📇', "Couldn't load client data",
+      'There was a problem reaching the client intelligence service. Tap Refresh to try again.');
+    return;
+  }
   let rows = [...state.clients];
   if (state.filterTag !== 'all') rows = rows.filter(c => c.action_tag === state.filterTag);
   if (state.sortBy === 'rfm_score')    rows.sort((a, b) => (b.rfm_score || 0) - (a.rfm_score || 0));
@@ -314,9 +342,9 @@ function renderImport() {
         <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed var(--border);font-size:13px">
           <span>
             <span class="status-badge ${r.status === 'success' ? 'status-completed' : (r.status === 'partial' ? 'status-pending' : 'status-cancelled')}">${escapeHTML(r.status)}</span>
-            ${escapeHTML(formatDate(r.created_at))}
+            ${escapeHTML(formatDate(r.started_at))}
           </span>
-          <span style="font-family:'JetBrains Mono',monospace">${r.rows_imported || 0} rows</span>
+          <span style="font-family:'JetBrains Mono',monospace">${r.row_count || 0} rows</span>
         </div>
       `).join('') : '<div class="empty">No imports yet.</div>'}
     </div>

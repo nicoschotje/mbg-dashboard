@@ -9,13 +9,6 @@ let initialized = false;
 const moduleCache = {};
 const ctx = {};
 
-const TITLES = {
-  analytics: 'Intelligence · Analytics',
-  intelligence: 'Intelligence · MBG Clients',
-  'access-pins': 'Intelligence · Access PINs',
-  reports: 'Intelligence · Reports',
-};
-
 async function showModule(name) {
   document.querySelectorAll('.nav-item[data-imodule]').forEach(n =>
     n.classList.toggle('active', n.dataset.imodule === name));
@@ -26,7 +19,7 @@ async function showModule(name) {
   if (pane) pane.classList.add('active');
 
   const titleEl = document.getElementById('header-title');
-  if (titleEl) titleEl.textContent = TITLES[name] || name;
+  if (titleEl) titleEl.textContent = 'Intelligence';
 
   if (!moduleCache[name]) {
     moduleCache[name] = await import(`../modules/${name}.js`);
@@ -36,7 +29,7 @@ async function showModule(name) {
 
 export async function init(opts) {
   const titleEl = document.getElementById('header-title');
-  if (titleEl) titleEl.textContent = TITLES.analytics;
+  if (titleEl) titleEl.textContent = 'Intelligence';
 
   if (!initialized) {
     initialized = true;

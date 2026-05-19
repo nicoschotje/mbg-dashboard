@@ -24,6 +24,17 @@ const PERIODS = [
   { id: 'custom',    label: 'Custom',    days: null },
 ];
 
+const CHART = {
+  accent: '#26d4a8',
+  accentFill: 'rgba(38,212,168,0.15)',
+  text: '#f5f7f6',
+  muted: '#9aa5a0',
+  grid: '#1c2421',
+  cardBg: '#101614',
+  forecast: '#fbbf24',
+  palette: ['#26d4a8', '#fb9d3c', '#60a5fa', '#fbbf24', '#f87171', '#9aa5a0', '#cd7f32', '#c0c0c0'],
+};
+
 const state = {
   period: '30d',
   customStart: null,
@@ -445,13 +456,22 @@ async function renderOverview(c) {
     data: {
       labels,
       datasets: [
-        { label: 'Revenue', data: revData, borderColor: '#00C9A7', backgroundColor: 'rgba(0,201,167,0.15)', tension: 0.3, fill: true },
+        { label: 'Revenue', data: revData, borderColor: CHART.accent, backgroundColor: CHART.accentFill, tension: 0.3, fill: true },
       ],
     },
-    options: { responsive: true, plugins: { legend: { labels: { color: '#E8F5F0' } } },
+    options: { responsive: true, plugins: { legend: { labels: { color: CHART.text } } },
       scales: {
-        x: { ticks: { color: '#8FA89F' }, grid: { color: '#1E2E2A' } },
-        y: { ticks: { color: '#8FA89F' }, grid: { color: '#1E2E2A' } },
+        x: {
+          ticks: {
+            color: CHART.muted,
+            maxRotation: 0,
+            autoSkip: true,
+            // Show only the day-of-month number, no rotation, no ISO clutter
+            callback(value) { return String(this.getLabelForValue(value)).slice(8); },
+          },
+          grid: { color: CHART.grid },
+        },
+        y: { ticks: { color: CHART.muted }, grid: { color: CHART.grid } },
       },
     },
   });
@@ -464,11 +484,11 @@ async function renderOverview(c) {
       labels: payLabels,
       datasets: [{
         data: payLabels.map(k => c.byPayment[k]),
-        backgroundColor: ['#00C9A7', '#FF6B35', '#4A9EFF', '#FFD700', '#8FA89F'],
-        borderColor: '#0F1614',
+        backgroundColor: CHART.palette,
+        borderColor: CHART.cardBg,
       }],
     },
-    options: { responsive: true, plugins: { legend: { labels: { color: '#E8F5F0', font: { size: 11 } } } } },
+    options: { responsive: true, plugins: { legend: { labels: { color: CHART.text, font: { size: 11 } } } } },
   });
 }
 
@@ -521,30 +541,56 @@ function renderPL(c) {
 async function renderProducts(c) {
   const host = paneEl.querySelector('#ap-products');
   const top = c.topProducts.slice(0, 12);
+  const catLabels = Object.keys(c.byCategory);
+  const catHasSpread = catLabels.length > 1;
+
+  // Ranked bar list — no rotated/overlapping axis labels
+  const maxRev = top.length ? (top[0].revenue || 0) : 0;
+  const barList = top.length
+    ? `<div class="bar-list">${top.map(p => {
+        const pct = maxRev > 0 ? Math.max(2, (p.revenue / maxRev) * 100) : 0;
+        return `<div class="bar-row">
+          <span class="bar-name">${escapeHTML(p.name)}</span>
+          <span class="bar-value">${formatCurrency(p.revenue)}</span>
+          <span class="bar-track"><span class="bar-fill" style="width:${pct}%"></span></span>
+        </div>`;
+      }).join('')}</div>`
+    : '<div class="empty">No product revenue in this period.</div>';
+
+  const categoryCard = catHasSpread
+    ? `<div class="card">
+        <div class="card-title">By category</div>
+        <canvas id="ch-cat" height="180"></canvas>
+      </div>`
+    : `<div class="card">
+        <div class="card-title">By category</div>
+        <div class="empty-state">
+          <div class="empty-icon">🗂️</div>
+          <div class="empty-title">Not enough category data</div>
+          <div class="empty-sub">Sales in this period only span one category, so a breakdown chart adds nothing. Assign categories to products to see a split.</div>
+        </div>
+      </div>`;
 
   host.innerHTML = `
     <div class="kpi-grid" style="margin-bottom:18px">
       <div class="kpi"><div class="kpi-label">Best seller (units)</div><div class="kpi-value" style="font-size:18px">${escapeHTML(c.bestSelling.name || '—')}</div><div class="kpi-sub">${c.bestSelling.qty || 0} units</div></div>
       <div class="kpi"><div class="kpi-label">Highest revenue</div><div class="kpi-value" style="font-size:18px">${escapeHTML(c.highestRevProduct.name || '—')}</div><div class="kpi-sub">${formatCurrency(c.highestRevProduct.revenue || 0)}</div></div>
-      <div class="kpi"><div class="kpi-label">Categories</div><div class="kpi-value">${Object.keys(c.byCategory).length}</div><div class="kpi-sub">in period</div></div>
+      <div class="kpi"><div class="kpi-label">Categories</div><div class="kpi-value">${catLabels.length}</div><div class="kpi-sub">in period</div></div>
     </div>
 
     <div class="card" style="margin-bottom:14px">
-      <div style="font-weight:600;margin-bottom:10px">Revenue per product (top 12)</div>
-      <canvas id="ch-prod" height="200"></canvas>
+      <div class="card-title">Revenue per product (top 12)</div>
+      ${barList}
     </div>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+      ${categoryCard}
       <div class="card">
-        <div style="font-weight:600;margin-bottom:10px">By category</div>
-        <canvas id="ch-cat" height="180"></canvas>
-      </div>
-      <div class="card">
-        <div style="font-weight:600;margin-bottom:10px">Margin per product</div>
+        <div class="card-title">Margin per product</div>
         ${(c.topProducts.slice(0, 10).length
           ? c.topProducts.slice(0, 10).map(p => {
               const m = p.revenue > 0 ? ((p.profit / p.revenue) * 100).toFixed(0) : '—';
-              return `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed var(--border);font-size:13px">
+              return `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px">
                 <span>${escapeHTML(p.name)}</span>
                 <span style="font-family:'JetBrains Mono',monospace">${m}${m === '—' ? '' : '%'}</span>
               </div>`;
@@ -554,33 +600,23 @@ async function renderProducts(c) {
     </div>
   `;
 
-  await ensureChart();
   destroyChart('prod');
-  charts.prod = new window.Chart(host.querySelector('#ch-prod'), {
-    type: 'bar',
-    data: {
-      labels: top.map(p => p.name),
-      datasets: [{ label: 'Revenue', data: top.map(p => p.revenue), backgroundColor: '#00C9A7' }],
-    },
-    options: { responsive: true, plugins: { legend: { display: false } },
-      scales: {
-        x: { ticks: { color: '#8FA89F' }, grid: { color: '#1E2E2A' } },
-        y: { ticks: { color: '#8FA89F' }, grid: { color: '#1E2E2A' } },
-      },
-    },
-  });
 
-  destroyChart('cat');
-  const catLabels = Object.keys(c.byCategory);
-  charts.cat = new window.Chart(host.querySelector('#ch-cat'), {
-    type: 'pie',
-    data: { labels: catLabels, datasets: [{
-      data: catLabels.map(k => c.byCategory[k].revenue),
-      backgroundColor: ['#00C9A7', '#FF6B35', '#4A9EFF', '#FFD700', '#FF4757', '#8FA89F', '#CD7F32', '#C0C0C0'],
-      borderColor: '#0F1614',
-    }] },
-    options: { responsive: true, plugins: { legend: { labels: { color: '#E8F5F0', font: { size: 11 } } } } },
-  });
+  if (catHasSpread) {
+    await ensureChart();
+    destroyChart('cat');
+    charts.cat = new window.Chart(host.querySelector('#ch-cat'), {
+      type: 'pie',
+      data: { labels: catLabels, datasets: [{
+        data: catLabels.map(k => c.byCategory[k].revenue),
+        backgroundColor: CHART.palette,
+        borderColor: CHART.cardBg,
+      }] },
+      options: { responsive: true, plugins: { legend: { labels: { color: CHART.text, font: { size: 11 } } } } },
+    });
+  } else {
+    destroyChart('cat');
+  }
 }
 
 async function renderCustomers(c) {
@@ -668,14 +704,22 @@ async function renderForecast(c) {
     data: {
       labels,
       datasets: [
-        { label: 'Actual', data: histData, borderColor: '#00C9A7', backgroundColor: 'rgba(0,201,167,0.15)', tension: 0.3, fill: true },
-        { label: 'Forecast', data: fcData, borderColor: '#FFD700', borderDash: [4, 4], tension: 0.3, fill: false },
+        { label: 'Actual', data: histData, borderColor: CHART.accent, backgroundColor: CHART.accentFill, tension: 0.3, fill: true },
+        { label: 'Forecast', data: fcData, borderColor: CHART.forecast, borderDash: [4, 4], tension: 0.3, fill: false },
       ],
     },
-    options: { responsive: true, plugins: { legend: { labels: { color: '#E8F5F0' } } },
+    options: { responsive: true, plugins: { legend: { labels: { color: CHART.text } } },
       scales: {
-        x: { ticks: { color: '#8FA89F' }, grid: { color: '#1E2E2A' } },
-        y: { ticks: { color: '#8FA89F' }, grid: { color: '#1E2E2A' } },
+        x: {
+          ticks: {
+            color: CHART.muted,
+            maxRotation: 0,
+            autoSkip: true,
+            callback(value) { return String(this.getLabelForValue(value)).slice(8); },
+          },
+          grid: { color: CHART.grid },
+        },
+        y: { ticks: { color: CHART.muted }, grid: { color: CHART.grid } },
       },
     },
   });
@@ -701,7 +745,7 @@ function renderHeatmap(c) {
       // Interpolate #070B0A → #00C9A7 by intensity
       const bg = intensity === 0
         ? 'var(--bg-base)'
-        : `rgba(0, 201, 167, ${0.15 + intensity * 0.85})`;
+        : `rgba(38, 212, 168, ${0.15 + intensity * 0.85})`;
       cells.push(`<div class="hm-cell" style="background:${bg}" data-tip="${dowNames[d]} ${h}:00 — ${v} order${v === 1 ? '' : 's'}"></div>`);
     }
   }

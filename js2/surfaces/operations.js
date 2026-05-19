@@ -84,9 +84,8 @@ async function showModule(name) {
   const pane = document.getElementById(`pane-${name}`);
   if (pane) pane.classList.add('active');
 
-  const titleMap = { orders: 'Orders', inventory: 'Inventory', customers: 'Customers' };
   const titleEl = document.getElementById('header-title');
-  if (titleEl) titleEl.textContent = `Operations · ${titleMap[name] || name}`;
+  if (titleEl) titleEl.textContent = 'Operations';
 
   // Lazy import the module on first access
   if (!moduleCache[name]) {

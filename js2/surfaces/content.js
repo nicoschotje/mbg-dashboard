@@ -10,15 +10,6 @@ let initialized = false;
 const moduleCache = {};
 const ctx = {};
 
-const TITLES = {
-  products: 'Content · Products',
-  categories: 'Content · Categories',
-  banners: 'Content · Banners',
-  announcements: 'Content · Announcements',
-  discounts: 'Content · Discounts',
-  settings: 'Content · Settings',
-};
-
 async function showModule(name) {
   document.querySelectorAll('.nav-item[data-cmodule]').forEach(n =>
     n.classList.toggle('active', n.dataset.cmodule === name));
@@ -30,7 +21,7 @@ async function showModule(name) {
   if (pane) pane.classList.add('active');
 
   const titleEl = document.getElementById('header-title');
-  if (titleEl) titleEl.textContent = TITLES[name] || name;
+  if (titleEl) titleEl.textContent = 'Content';
 
   if (!moduleCache[name]) {
     moduleCache[name] = await import(`../modules/${name}.js`);
@@ -41,7 +32,7 @@ async function showModule(name) {
 export async function init(opts) {
   // Always update title when switching to Content
   const titleEl = document.getElementById('header-title');
-  if (titleEl) titleEl.textContent = TITLES.products;
+  if (titleEl) titleEl.textContent = 'Content';
 
   if (!initialized) {
     initialized = true;
