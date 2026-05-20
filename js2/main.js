@@ -28,8 +28,8 @@ storeToggle.addEventListener('click', async () => {
   const isOpen = AppState.settings?.is_open !== false;
   const next = !isOpen;
   const msg = next
-    ? 'Open the store? Customers will be able to shop.'
-    : 'Close the store? Customers will see a closed screen.';
+    ? 'Open the store? Clients will be able to shop.'
+    : 'Close the store? Clients will see a closed screen.';
   if (!confirm(msg)) return;
   try {
     const sb = getSB();

@@ -187,7 +187,7 @@ async function exportCustomersCSV() {
     const sb = getSB();
     const { data, error } = await sb.from('customer_tiers').select('customer_phone, customer_name, tier, lifetime_spent, total_orders, last_order_at, promo_opt_in, tags, notes');
     if (error) throw error;
-    exportCSV(data || [], `customers-${Date.now()}.csv`);
+    exportCSV(data || [], `clients-${Date.now()}.csv`);
   } catch (e) { toastError(e.message); }
 }
 

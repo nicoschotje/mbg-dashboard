@@ -315,7 +315,7 @@ function saLinearRegression(data) {
 const TABS = ['overview', 'pl', 'products', 'customers', 'forecast', 'heatmap'];
 const TAB_LABELS = {
   overview: 'Overview', pl: 'P&L', products: 'Products',
-  customers: 'Customers', forecast: 'Forecasting', heatmap: 'Heatmap',
+  customers: 'Clients', forecast: 'Forecasting', heatmap: 'Heatmap',
 };
 
 function renderShell() {
@@ -587,14 +587,14 @@ async function renderCustomers(c) {
   const host = paneEl.querySelector('#ap-customers');
   host.innerHTML = `
     <div class="kpi-grid" style="margin-bottom:18px">
-      <div class="kpi"><div class="kpi-label">Unique customers</div><div class="kpi-value">${c.uniqueCusts}</div></div>
+      <div class="kpi"><div class="kpi-label">Unique clients</div><div class="kpi-value">${c.uniqueCusts}</div></div>
       <div class="kpi"><div class="kpi-label">Repeat rate</div><div class="kpi-value">${c.repeatRate.toFixed(1)}%</div><div class="kpi-sub">${c.repeatCusts} repeat</div></div>
       <div class="kpi"><div class="kpi-label">Top spender</div><div class="kpi-value" style="font-size:16px">${escapeHTML(c.loyalName || '—')}</div><div class="kpi-sub">${formatCurrency(c.loyalSpent)} · ${c.loyalOrders} orders</div></div>
     </div>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
       <div class="card">
-        <div style="font-weight:600;margin-bottom:10px">Top customers</div>
+        <div style="font-weight:600;margin-bottom:10px">Top clients</div>
         ${(c.topCustomers || []).slice(0, 10).map(cu => `
           <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed var(--border);font-size:13px">
             <span>${escapeHTML(cu.name)} <span style="color:var(--text-muted)">${escapeHTML(cu.phone)}</span></span>

@@ -106,7 +106,7 @@ function render() {
 function renderRestocks() {
   if (!restockEl) return;
   if (!state.pendingRestocks.length) {
-    restockEl.innerHTML = `<div class="empty" style="padding:14px">No customers waiting on restocks.</div>`;
+    restockEl.innerHTML = `<div class="empty" style="padding:14px">No clients waiting on restocks.</div>`;
     return;
   }
   // Group by product_id
@@ -125,7 +125,7 @@ function renderRestocks() {
         <div style="display:flex;justify-content:space-between;align-items:center">
           <div>
             <div style="font-weight:600">${escapeHTML(g.name)}</div>
-            <div style="color:var(--text-muted);font-size:12px">${g.customers.length} customer${g.customers.length === 1 ? '' : 's'} waiting · stock ${g.stock}</div>
+            <div style="color:var(--text-muted);font-size:12px">${g.customers.length} client${g.customers.length === 1 ? '' : 's'} waiting · stock ${g.stock}</div>
           </div>
           <button class="btn btn-sm" data-restock-product="${escapeHTML(g.product_id)}"
             ${g.stock > 0 ? '' : 'disabled title="Restock product first"'}>Notify all</button>
@@ -161,7 +161,7 @@ async function updateField(productId, field, value) {
   if (field === 'stock_qty' && num > 0) {
     const waiting = state.pendingRestocks.filter(n => n.product_id === productId);
     if (waiting.length) {
-      toastWarn(`${waiting.length} customer${waiting.length === 1 ? '' : 's'} waiting for "${p?.name}" — notify from queue.`);
+      toastWarn(`${waiting.length} client${waiting.length === 1 ? '' : 's'} waiting for "${p?.name}" — notify from queue.`);
     }
   }
   AppState.emit('stock:changed', { productId, field, value: num });
@@ -174,7 +174,7 @@ async function notifyAll(productId) {
     .eq('product_id', productId)
     .is('notified_at', null);
   if (error) { toastError(error.message); return; }
-  toast('Marked all waiting customers as notified.');
+  toast('Marked all waiting clients as notified.');
   await loadRestocks();
   renderRestocks();
 }

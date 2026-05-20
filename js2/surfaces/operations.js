@@ -84,7 +84,7 @@ async function showModule(name) {
   const pane = document.getElementById(`pane-${name}`);
   if (pane) pane.classList.add('active');
 
-  const titleMap = { orders: 'Orders', inventory: 'Inventory', customers: 'Customers' };
+  const titleMap = { orders: 'Orders', inventory: 'Inventory', customers: 'Clients' };
   const titleEl = document.getElementById('header-title');
   if (titleEl) titleEl.textContent = `Operations · ${titleMap[name] || name}`;
 

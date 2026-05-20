@@ -32,7 +32,7 @@ async function loadAll() {
     .select('customer_name, customer_phone, contact, total, order_status, created_at')
     .order('created_at', { ascending: false })
     .limit(2000);
-  if (oErr) { toastError('Customers load failed: ' + oErr.message); return; }
+  if (oErr) { toastError('Clients load failed: ' + oErr.message); return; }
 
   const map = {};
   (orders || []).forEach(o => {
@@ -109,7 +109,7 @@ function customerCardHTML(c) {
 function render() {
   if (!listEl) return;
   const rows = sorted();
-  if (!rows.length) { listEl.innerHTML = `<div class="empty">No customers found.</div>`; return; }
+  if (!rows.length) { listEl.innerHTML = `<div class="empty">No clients found.</div>`; return; }
   listEl.innerHTML = rows.map(customerCardHTML).join('');
 }
 

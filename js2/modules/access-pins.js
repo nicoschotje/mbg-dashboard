@@ -24,7 +24,7 @@ async function loadAll() {
   const sb = getSB();
   // §11.12 / §4: list_store_customers returns safe fields only (no pin_hash)
   const { data, error } = await sb.rpc('list_store_customers');
-  if (error) { toastError('Customers load: ' + error.message); return; }
+  if (error) { toastError('Clients load: ' + error.message); return; }
   state.customers = data || [];
 }
 
