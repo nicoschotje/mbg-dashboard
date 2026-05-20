@@ -58,7 +58,7 @@ async function loadAll() {
   }
   state.settings = settings || {
     store_name: AppState.settings?.store_name || '',
-    delivery_fee: 50, free_delivery_min: 0, is_open: true,
+    delivery_fee: 50, free_delivery_min: 5000, free_delivery_enabled: true, is_open: true,
     operating_hours: { open: '08:00', close: '22:00', days: [0,1,2,3,4,5,6] },
   };
 
@@ -254,14 +254,27 @@ function render() {
     <!-- Delivery -->
     <div class="card" style="margin-bottom:14px">
       <h3 style="margin:0 0 10px;font-family:'Syne',sans-serif">Delivery</h3>
+
+      <div class="setting-toggle-row">
+        <label class="toggle-label">Free delivery promotion</label>
+        <label class="toggle-switch">
+          <input type="checkbox" id="freedeliv-enabled-toggle" />
+          <span class="toggle-slider"></span>
+        </label>
+        <span class="toggle-status" id="freedeliv-enabled-status">Enabled</span>
+      </div>
+      <div class="field-row" style="margin-bottom:10px">
+        <div style="flex:1 1 280px">
+          <label class="field-label">Minimum order for free delivery ₱</label>
+          <input class="input" id="freedeliv-threshold" type="number" min="0" step="1" value="${s.free_delivery_min ?? 5000}"/>
+          <span id="freedeliv-saved" style="display:none;color:#27AE60;font-size:12px;font-weight:600;margin-left:6px">Saved ✓</span>
+        </div>
+      </div>
+
       <div class="field-row">
         <div style="flex:1 1 180px">
           <label class="field-label">Default fee ₱</label>
           <input class="input" id="d-fee" type="number" min="0" step="0.01" value="${s.delivery_fee ?? 50}"/>
-        </div>
-        <div style="flex:1 1 180px">
-          <label class="field-label">Free delivery min ₱</label>
-          <input class="input" id="d-min" type="number" min="0" step="0.01" value="${s.free_delivery_min ?? 0}"/>
         </div>
         <div style="flex:1 1 180px">
           <label class="field-label">Min order ₱</label>
@@ -731,12 +744,44 @@ function bindHandlers() {
     });
   });
 
-  // Delivery save
+  // Free delivery toggle + threshold — save immediately, no Save button
+  const fdToggle    = paneEl.querySelector('#freedeliv-enabled-toggle');
+  const fdStatus    = paneEl.querySelector('#freedeliv-enabled-status');
+  const fdThreshold = paneEl.querySelector('#freedeliv-threshold');
+  const fdSaved     = paneEl.querySelector('#freedeliv-saved');
+  fdToggle.checked  = settings.free_delivery_enabled !== false;
+  fdStatus.textContent = fdToggle.checked ? 'Enabled' : 'Disabled';
+
+  let fdSavedTimer = null;
+  function flashFdSaved() {
+    fdSaved.style.display = '';
+    clearTimeout(fdSavedTimer);
+    fdSavedTimer = setTimeout(() => { fdSaved.style.display = 'none'; }, 2000);
+  }
+
+  fdToggle.addEventListener('change', async (e) => {
+    const val = e.target.checked;
+    fdStatus.textContent = val ? 'Enabled' : 'Disabled';
+    try {
+      await saveSettings({ free_delivery_enabled: val });
+      settings.free_delivery_enabled = val;
+      flashFdSaved();
+    } catch (err) { toastError(err.message); }
+  });
+  fdThreshold.addEventListener('change', async (e) => {
+    const val = parseFloat(e.target.value) || 0;
+    try {
+      await saveSettings({ free_delivery_min: val });
+      settings.free_delivery_min = val;
+      flashFdSaved();
+    } catch (err) { toastError(err.message); }
+  });
+
+  // Delivery save (default fee + min order — free-delivery fields save instantly above)
   paneEl.querySelector('#d-save').addEventListener('click', async () => {
     try {
       await saveSettings({
         delivery_fee:      parseFloat(paneEl.querySelector('#d-fee').value) || 0,
-        free_delivery_min: parseFloat(paneEl.querySelector('#d-min').value) || 0,
         min_order_amount:  parseFloat(paneEl.querySelector('#d-minorder').value) || 0,
       });
       toast('Delivery saved'); await loadAll();
