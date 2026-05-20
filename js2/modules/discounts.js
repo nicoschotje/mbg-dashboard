@@ -68,7 +68,7 @@ function rowHTML(c) {
           <div style="color:var(--text-muted);font-size:12px;margin-top:4px">
             ${escapeHTML(c.description || '')}
             ${c.min_order_amount ? ` · min order ${formatCurrency(c.min_order_amount)}` : ''}
-            ${c.single_use_per_customer ? ' · single-use per customer' : ''}
+            ${c.single_use_per_customer ? ' · single-use per client' : ''}
           </div>
           <div style="color:var(--text-muted);font-size:11px;margin-top:6px">
             uses ${c.uses_count || 0}${c.max_uses ? ` / ${c.max_uses}` : ' (unlimited)'}
@@ -183,7 +183,7 @@ function openForm(c) {
         <input type="checkbox" id="f-active" ${data.is_active ? 'checked' : ''}/> Active
       </label>
       <label style="display:flex;align-items:center;gap:6px;font-size:13px">
-        <input type="checkbox" id="f-single" ${data.single_use_per_customer ? 'checked' : ''}/> Single use per customer
+        <input type="checkbox" id="f-single" ${data.single_use_per_customer ? 'checked' : ''}/> Single use per client
       </label>
     </div>
 

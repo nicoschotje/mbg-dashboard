@@ -155,7 +155,7 @@ async function printRevenueReport() {
 
       <h2>Orders (${orders.length})</h2>
       <table>
-        <thead><tr><th>When</th><th>Customer</th><th>Status</th><th>Method</th><th class="right">Total</th></tr></thead>
+        <thead><tr><th>When</th><th>Client</th><th>Status</th><th>Method</th><th class="right">Total</th></tr></thead>
         <tbody>
           ${orders.map(o => `
             <tr>
@@ -273,7 +273,7 @@ function buildPane() {
       </div>
 
       <div class="card">
-        <h3 style="margin:0 0 8px;font-family:'Syne',sans-serif">Customer Tiers</h3>
+        <h3 style="margin:0 0 8px;font-family:'Syne',sans-serif">Client Tiers</h3>
         <p style="color:var(--text-muted);font-size:13px;margin:0 0 12px">Lifetime spend, tier, opt-in flags, tags.</p>
         <button class="btn btn-sm" data-rep="cust-csv">Export CSV</button>
       </div>

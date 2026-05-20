@@ -354,7 +354,7 @@ function render() {
     <div class="card" style="margin-bottom:14px">
       <h3 style="margin:0 0 10px;font-family:'Syne',sans-serif">Tier Configuration</h3>
       <p style="color:var(--text-muted);font-size:13px;margin:0 0 12px">
-        Tiers are assigned automatically based on customer lifetime spend (₱).
+        Tiers are assigned automatically based on client lifetime spend (₱).
       </p>
       <div id="tier-list">${tiersHTML()}</div>
       <button class="btn btn-sm" id="tier-save" style="margin-top:10px">Save tiers</button>

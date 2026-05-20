@@ -85,7 +85,7 @@ function render() {
           <thead><tr><th>Name</th><th>Phone</th><th>Status</th><th>Fails</th><th>Last login</th><th></th></tr></thead>
           <tbody>
             ${rows.length ? rows.map(rowHTML).join('')
-              : '<tr><td colspan="6" class="empty">No customer accounts.</td></tr>'}
+              : '<tr><td colspan="6" class="empty">No client accounts.</td></tr>'}
           </tbody>
         </table>
       </div>
@@ -152,7 +152,7 @@ async function deleteAccount(customerId) {
 
 function openCreateForm() {
   modalBody.innerHTML = `
-    <h2>New customer account</h2>
+    <h2>New client account</h2>
     <p style="color:var(--text-muted);font-size:12px;margin:0 0 14px">
       The PIN is hashed server-side via <code>pg_crypto</code> (bcrypt). Raw PIN is never stored.
     </p>
@@ -200,7 +200,7 @@ function openCreateForm() {
       if (!/^\d{4,6}$/.test(pin)) return toastWarn('PIN must be 4–6 digits.');
       try {
         await createCustomer({ display_name, phone, email, pin, address, notes });
-        toast('Customer account created.');
+        toast('Client account created.');
         modalBackdrop.classList.remove('show');
         await loadAll(); render();
       } catch (e) { toastError(e.message); }
@@ -270,7 +270,7 @@ function openResetPin(c) {
       if (!/^\d{4,6}$/.test(pin)) return toastWarn('PIN must be 4–6 digits.');
       try {
         await resetPin(c.id, pin);
-        toast('PIN reset. Notify the customer of their new PIN.');
+        toast('PIN reset. Notify the client of their new PIN.');
         modalBackdrop.classList.remove('show');
         await loadAll(); render();
       } catch (e) { toastError(e.message); }
