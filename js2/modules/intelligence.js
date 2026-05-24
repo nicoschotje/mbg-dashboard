@@ -18,7 +18,7 @@ const state = {
   clients: [],
   importLog: [],
   activeTab: 'dashboard',
-  sortBy: 'rfm_score',
+  sortBy: 'lifetime_score',
   filterTag: 'all',
 };
 
@@ -56,7 +56,7 @@ const TAB_LABELS = {
 async function loadAll() {
   const sb = getSB();
   const [clients, importLog] = await Promise.all([
-    sb.from('mbg_client_intelligence').select('*').eq('is_active', true).order('rfm_score', { ascending: false }),
+    sb.from('mbg_client_intelligence').select('*').order('lifetime_score', { ascending: false }),
     sb.from('mbg_import_log').select('*').order('created_at', { ascending: false }).limit(20),
   ]);
   if (clients.error)   toastError('Clients load: ' + clients.error.message);
@@ -109,9 +109,13 @@ function renderActiveTab() {
 function renderDashboard() {
   const host = paneEl.querySelector('#ip-dashboard');
   const total = state.clients.length;
-  const totalRev = state.clients.reduce((a, c) => a + (parseFloat(c.total_revenue) || 0), 0);
-  const atRisk = state.clients.filter(c => (c.days_since_last || 0) > 30).length;
-  const top = [...state.clients].sort((a, b) => (parseFloat(b.total_revenue) || 0) - (parseFloat(a.total_revenue) || 0))[0];
+  const totalRev = state.clients.reduce((a, c) => a + (parseFloat(c.lifetime_spend) || 0), 0);
+  const totalCost = state.clients.reduce((a, c) => a + (parseFloat(c.lifetime_total_cost) || 0), 0);
+  const totalProfit = state.clients.reduce((a, c) => a + (parseFloat(c.lifetime_total_profit) || 0), 0);
+  const totalDisc = state.clients.reduce((a, c) => a + (parseFloat(c.lifetime_total_discounts) || 0), 0);
+  const margin = totalRev > 0 ? (totalProfit / totalRev) * 100 : 0;
+  const atRisk = state.clients.filter(c => (c.days_since_last_order || 0) > 30).length;
+  const top = [...state.clients].sort((a, b) => (parseFloat(b.lifetime_spend) || 0) - (parseFloat(a.lifetime_spend) || 0))[0];
 
   // Action tag distribution
   const tagCounts = {};
@@ -121,8 +125,12 @@ function renderDashboard() {
     <div class="kpi-grid" style="margin-bottom:18px">
       <div class="kpi"><div class="kpi-label">Active B2B clients</div><div class="kpi-value">${total}</div></div>
       <div class="kpi"><div class="kpi-label">Total B2B revenue</div><div class="kpi-value">${formatCurrency(totalRev)}</div></div>
+      <div class="kpi"><div class="kpi-label">Total cost</div><div class="kpi-value" style="color:var(--red)">${formatCurrency(totalCost)}</div></div>
+      <div class="kpi"><div class="kpi-label">Total profit</div><div class="kpi-value" style="color:var(--green)">${formatCurrency(totalProfit)}</div></div>
+      <div class="kpi"><div class="kpi-label">Margin</div><div class="kpi-value">${margin.toFixed(1)}%</div></div>
+      ${totalDisc > 0 ? `<div class="kpi"><div class="kpi-label">Total discounts</div><div class="kpi-value" style="color:var(--orange)">${formatCurrency(totalDisc)}</div></div>` : ''}
       <div class="kpi"><div class="kpi-label">At risk (30d+)</div><div class="kpi-value" style="color:${atRisk > 0 ? 'var(--orange)' : 'var(--green)'}">${atRisk}</div></div>
-      <div class="kpi"><div class="kpi-label">Top client</div><div class="kpi-value" style="font-size:14px">${escapeHTML(top?.client_name || '—')}</div><div class="kpi-sub">${formatCurrency(top?.total_revenue || 0)}</div></div>
+      <div class="kpi"><div class="kpi-label">Top client</div><div class="kpi-value" style="font-size:14px">${escapeHTML(top?.client_name || '—')}</div><div class="kpi-sub">${formatCurrency(top?.lifetime_spend || 0)}</div></div>
     </div>
 
     <div class="card">
@@ -145,20 +153,18 @@ function renderList() {
   const host = paneEl.querySelector('#ip-list');
   let rows = [...state.clients];
   if (state.filterTag !== 'all') rows = rows.filter(c => c.action_tag === state.filterTag);
-  if (state.sortBy === 'rfm_score')    rows.sort((a, b) => (b.rfm_score || 0) - (a.rfm_score || 0));
-  if (state.sortBy === 'revenue')      rows.sort((a, b) => (b.total_revenue || 0) - (a.total_revenue || 0));
-  if (state.sortBy === 'recency')      rows.sort((a, b) => (a.days_since_last || 9999) - (b.days_since_last || 9999));
-  if (state.sortBy === 'frequency')    rows.sort((a, b) => (b.frequency_score || 0) - (a.frequency_score || 0));
+  if (state.sortBy === 'lifetime_score') rows.sort((a, b) => (b.lifetime_score || 0) - (a.lifetime_score || 0));
+  if (state.sortBy === 'revenue')        rows.sort((a, b) => (b.lifetime_spend || 0) - (a.lifetime_spend || 0));
+  if (state.sortBy === 'recency')        rows.sort((a, b) => (a.days_since_last_order ?? 9999) - (b.days_since_last_order ?? 9999));
+  if (state.sortBy === 'orders')         rows.sort((a, b) => (b.lifetime_order_count || 0) - (a.lifetime_order_count || 0));
 
   const tagOptions = ['all', ...Object.keys(ACTION_LABELS)];
 
   host.innerHTML = `
     <div class="filter-row">
       <select class="input" id="il-sort" style="max-width:180px">
-        <option value="rfm_score">RFM score</option>
-        <option value="revenue">Revenue</option>
-        <option value="recency">Recency</option>
-        <option value="frequency">Frequency</option>
+        ${[['lifetime_score','Score'],['revenue','Revenue'],['recency','Recency'],['orders','Orders']]
+          .map(([v, l]) => `<option value="${v}" ${state.sortBy === v ? 'selected' : ''}>${l}</option>`).join('')}
       </select>
       <select class="input" id="il-tag" style="max-width:200px">
         ${tagOptions.map(t => `<option value="${t}" ${t === state.filterTag ? 'selected' : ''}>${t === 'all' ? 'All tags' : ACTION_LABELS[t] || t}</option>`).join('')}
@@ -170,8 +176,8 @@ function renderList() {
         <table class="inv-table">
           <thead>
             <tr>
-              <th>Client</th><th>Location</th><th>Action</th>
-              <th>RFM</th><th>Revenue</th><th>Orders</th><th>Last</th><th></th>
+              <th>Client</th><th>Tier</th><th>Action</th>
+              <th>Score</th><th>Revenue</th><th>Orders</th><th>Profit</th><th>Margin</th><th>Last</th><th></th>
             </tr>
           </thead>
           <tbody>
@@ -180,18 +186,20 @@ function renderList() {
                 <tr data-id="${escapeHTML(c.id)}">
                   <td>
                     <div style="font-weight:600">${escapeHTML(c.client_name || '—')}</div>
-                    <div style="color:var(--text-muted);font-size:11px">${escapeHTML(c.contact_person || '')}</div>
+                    <div style="color:var(--text-muted);font-size:11px">${escapeHTML(c.telegram_username || '')}</div>
                   </td>
-                  <td>${escapeHTML(c.location || '—')}</td>
+                  <td>${escapeHTML(c.lifetime_tier || '—')}</td>
                   <td>${c.action_tag ? `<span class="action-tag tag-${c.action_tag}">${ACTION_LABELS[c.action_tag] || c.action_tag}</span>` : '—'}</td>
-                  <td style="font-family:'JetBrains Mono',monospace">${(c.rfm_score || 0).toFixed(1)}</td>
-                  <td style="font-family:'JetBrains Mono',monospace">${formatCurrency(c.total_revenue)}</td>
-                  <td style="font-family:'JetBrains Mono',monospace">${c.total_orders || 0}</td>
-                  <td style="color:var(--text-muted);font-size:12px">${c.days_since_last != null ? `${c.days_since_last}d` : '—'}</td>
+                  <td style="font-family:'JetBrains Mono',monospace">${c.lifetime_score || 0}</td>
+                  <td style="font-family:'JetBrains Mono',monospace">${formatCurrency(c.lifetime_spend)}</td>
+                  <td style="font-family:'JetBrains Mono',monospace">${c.lifetime_order_count || 0}</td>
+                  <td style="font-family:'JetBrains Mono',monospace;color:var(--green)">${formatCurrency(c.lifetime_total_profit)}</td>
+                  <td style="font-family:'JetBrains Mono',monospace">${(parseFloat(c.lifetime_profit_margin) || 0).toFixed(1)}%</td>
+                  <td style="color:var(--text-muted);font-size:12px">${c.days_since_last_order != null ? `${c.days_since_last_order}d` : '—'}</td>
                   <td><button class="btn btn-sm btn-ghost" data-action="view">View</button></td>
                 </tr>
               `).join('')
-              : '<tr><td colspan="8" class="empty">No clients match.</td></tr>'}
+              : '<tr><td colspan="10" class="empty">No clients match.</td></tr>'}
           </tbody>
         </table>
       </div>
@@ -222,69 +230,67 @@ async function openClientDetail(c) {
   const sb = getSB();
   const { data: orders } = await sb
     .from('mbg_orders')
-    .select('id, order_date, amount, items, payment_status, notes')
+    .select('id, order_date, amount, status, notes')
     .eq('client_id', c.id)
     .order('order_date', { ascending: false })
     .limit(50);
 
+  const margin = c.lifetime_profit_margin != null ? c.lifetime_profit_margin : c.profit_margin;
+
   modalBody.innerHTML = `
     <h2>${escapeHTML(c.client_name || 'Client')}</h2>
     <div style="color:var(--text-muted);font-size:12px;margin-bottom:14px">
-      ${escapeHTML(c.contact_person || '')} ${c.phone ? `· 📞 ${escapeHTML(c.phone)}` : ''} ${c.email ? `· ${escapeHTML(c.email)}` : ''}
-      ${c.location ? `<br>📍 ${escapeHTML(c.location)}` : ''}
+      ${c.telegram_username ? `✈️ ${escapeHTML(c.telegram_username)}` : ''}
+      ${c.lifetime_tier ? `· ${escapeHTML(c.lifetime_tier)} tier` : ''}
     </div>
 
     <div class="card" style="margin-bottom:12px">
       <div style="display:flex;flex-wrap:wrap;gap:14px">
-        <div><div class="kpi-label">RFM Score</div><div class="kpi-value">${(c.rfm_score || 0).toFixed(1)}</div></div>
-        <div><div class="kpi-label">Recency</div><div class="kpi-value" style="font-size:16px">${(c.recency_score || 0).toFixed(1)}</div></div>
-        <div><div class="kpi-label">Frequency</div><div class="kpi-value" style="font-size:16px">${(c.frequency_score || 0).toFixed(1)}</div></div>
-        <div><div class="kpi-label">Monetary</div><div class="kpi-value" style="font-size:16px">${(c.monetary_score || 0).toFixed(1)}</div></div>
+        <div><div class="kpi-label">Lifetime Score</div><div class="kpi-value">${c.lifetime_score || 0}</div></div>
+        <div><div class="kpi-label">Recent Score</div><div class="kpi-value" style="font-size:16px">${c.recent_score || 0}</div></div>
+        <div><div class="kpi-label">Orders</div><div class="kpi-value" style="font-size:16px">${c.lifetime_order_count || 0}</div></div>
+        <div><div class="kpi-label">Days since last</div><div class="kpi-value" style="font-size:16px">${c.days_since_last_order != null ? `${c.days_since_last_order}d` : '—'}</div></div>
       </div>
       ${c.action_tag ? `
         <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
           <div class="kpi-label">Recommended action</div>
           <div style="margin-top:6px"><span class="action-tag tag-${c.action_tag}">${ACTION_LABELS[c.action_tag] || c.action_tag}</span></div>
-          <div style="color:var(--text-muted);font-size:13px;margin-top:6px">${escapeHTML(ACTION_DESCRIPTIONS[c.action_tag] || '')}</div>
+          <div style="color:var(--text-muted);font-size:13px;margin-top:6px">${escapeHTML(ACTION_DESCRIPTIONS[c.action_tag] || c.behavior_tag_description || '')}</div>
         </div>
       ` : ''}
+    </div>
+
+    <div class="card" style="margin-bottom:12px">
+      <div style="font-weight:600;margin-bottom:8px">Financials (lifetime)</div>
+      <div style="display:flex;flex-wrap:wrap;gap:14px">
+        <div><div class="kpi-label">Revenue</div><div class="kpi-value" style="font-size:16px">${formatCurrency(c.lifetime_spend)}</div></div>
+        <div><div class="kpi-label">Total Cost</div><div class="kpi-value" style="font-size:16px;color:var(--red)">${formatCurrency(c.lifetime_total_cost)}</div></div>
+        <div><div class="kpi-label">Total Profit</div><div class="kpi-value" style="font-size:16px;color:var(--green)">${formatCurrency(c.lifetime_total_profit)}</div></div>
+        <div><div class="kpi-label">Margin</div><div class="kpi-value" style="font-size:16px">${(parseFloat(margin) || 0).toFixed(1)}%</div></div>
+        <div><div class="kpi-label">Avg order</div><div class="kpi-value" style="font-size:16px">${formatCurrency(c.lifetime_aov)}</div></div>
+        ${(parseFloat(c.lifetime_total_discounts) || 0) > 0 ? `<div><div class="kpi-label">Total Discounts</div><div class="kpi-value" style="font-size:16px;color:var(--orange)">${formatCurrency(c.lifetime_total_discounts)}</div></div>` : ''}
+      </div>
     </div>
 
     <div class="card" style="margin-bottom:12px">
       <div style="font-weight:600;margin-bottom:8px">Order history (${(orders || []).length})</div>
       ${(orders || []).length ? (orders || []).map(o => `
         <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed var(--border);font-size:13px">
-          <span>${escapeHTML(formatDate(o.order_date))} · ${escapeHTML(o.payment_status || 'pending')}</span>
+          <span>${escapeHTML(formatDate(o.order_date))} · ${escapeHTML(o.status || 'pending')}</span>
           <span style="font-family:'JetBrains Mono',monospace">${formatCurrency(o.amount)}</span>
         </div>
       `).join('') : '<div class="empty">No orders.</div>'}
     </div>
 
-    <div class="card" style="margin-bottom:12px">
-      <label class="field-label">Notes</label>
-      <textarea class="input" id="cn-notes" rows="3">${escapeHTML(c.notes || '')}</textarea>
-    </div>
-
     <div class="close-row">
-      <button class="btn btn-sm" data-d-act="save">Save notes</button>
       <button class="btn btn-sm btn-ghost" data-d-act="close">Close</button>
     </div>
   `;
   modalBackdrop.classList.add('show');
 
   modalBody.querySelectorAll('[data-d-act]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      if (btn.dataset.dAct === 'close') return modalBackdrop.classList.remove('show');
-      if (btn.dataset.dAct === 'save') {
-        const sb = getSB();
-        const { error } = await sb.from('mbg_client_intelligence')
-          .update({ notes: modalBody.querySelector('#cn-notes').value, updated_at: new Date().toISOString() })
-          .eq('id', c.id);
-        if (error) return toastError(error.message);
-        toast('Notes saved.');
-        modalBackdrop.classList.remove('show');
-        await loadAll(); renderActiveTab();
-      }
+    btn.addEventListener('click', () => {
+      if (btn.dataset.dAct === 'close') modalBackdrop.classList.remove('show');
     });
   });
 }
@@ -360,7 +366,7 @@ function renderScoring() {
       <p style="color:var(--text-muted);font-size:13px;margin:0 0 12px">
         Scoring weights and thresholds are evaluated server-side by the
         <code>compute-client-intelligence</code> edge function (§5.4).
-        The dashboard reads pre-computed <code>rfm_score</code> and <code>action_tag</code>.
+        The dashboard reads pre-computed <code>lifetime_score</code> and <code>action_tag</code>.
       </p>
       <div style="font-size:13px;line-height:1.7">
         <div><strong>L1 Recency</strong> (0–33.3) — days since last order</div>
