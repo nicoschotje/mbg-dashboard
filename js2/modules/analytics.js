@@ -171,7 +171,7 @@ function compute(d, bounds, isPrev = false) {
       c.totalDisc += parseFloat(o.discount_amount) || 0;
       // COGS — iterate items, multiply cost_price × qty
       (Array.isArray(o.items) ? o.items : []).forEach(item => {
-        const cost = costLookup[item.product_id] || 0;
+        const cost = costLookup[item.id] || 0;
         const qty  = parseInt(item.qty, 10) || 1;
         c.cogs += cost * qty;
       });
@@ -181,17 +181,17 @@ function compute(d, bounds, isPrev = false) {
 
     // Per-product / per-category / per-payment / time buckets — all orders
     (Array.isArray(o.items) ? o.items : []).forEach(item => {
-      const name = item.name || productNameLookup[item.product_id] || 'Unknown';
+      const name = item.name || productNameLookup[item.id] || 'Unknown';
       const qty  = parseInt(item.qty, 10) || 1;
       const lineRev = (parseFloat(item.price) || 0) * qty;
       if (!c.byProduct[name]) c.byProduct[name] = { qty: 0, revenue: 0, profit: 0 };
       c.byProduct[name].qty     += qty;
       c.byProduct[name].revenue += lineRev;
-      const cost = costLookup[item.product_id] || 0;
+      const cost = costLookup[item.id] || 0;
       c.byProduct[name].profit  += lineRev - (cost * qty);
 
       // Category
-      const prod = (d.products || []).find(p => p.id === item.product_id);
+      const prod = (d.products || []).find(p => p.id === item.id);
       const catName = prod ? (d.catMap?.[prod.category_id] || 'Uncategorized') : (item.category || 'Uncategorized');
       if (!c.byCategory[catName]) c.byCategory[catName] = { qty: 0, revenue: 0 };
       c.byCategory[catName].qty     += qty;

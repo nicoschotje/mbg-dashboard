@@ -213,7 +213,7 @@ async function exportPLCSV() {
     let cogs = 0;
     completed.forEach(o => {
       (Array.isArray(o.items) ? o.items : []).forEach(it => {
-        cogs += (cost[it.product_id] || 0) * (parseInt(it.qty, 10) || 1);
+        cogs += (cost[it.id] || 0) * (parseInt(it.qty, 10) || 1);
       });
     });
     const profit = revenue - cogs;
