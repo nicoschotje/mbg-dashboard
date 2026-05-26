@@ -619,3 +619,104 @@ label.field-label {
   color: var(--text-muted);
   min-width: 48px;
 }
+
+/* ── Product variants manager (product editor) ────────────────────────────── */
+.variants-section { margin-top: 18px; border-top: 1px dashed var(--border); padding-top: 16px; }
+.variants-section .variants-heading {
+  margin: 16px 0 10px;
+  font-family: 'Syne', sans-serif;
+  font-size: 15px;
+}
+
+.variants-activate {
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+.variants-warning {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--orange);
+  line-height: 1.4;
+}
+
+.variant-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 8px;
+}
+.variant-row.dragging { opacity: 0.4; }
+.variant-row.drop-target { border-color: var(--green); }
+.variant-row.sold-out .variant-name { text-decoration: line-through; color: var(--text-muted); }
+
+.variant-handle {
+  cursor: grab;
+  color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1;
+  user-select: none;
+  touch-action: none;
+}
+.variant-handle:active { cursor: grabbing; }
+
+.variant-main { flex: 1 1 auto; min-width: 0; cursor: pointer; }
+.variant-name { font-weight: 600; font-size: 14px; }
+.variant-price {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.strain-pill {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  vertical-align: middle;
+}
+
+.variant-edit-grid {
+  flex: 1 1 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.variant-edit-grid .input { flex: 1 1 120px; font-size: 14px; padding: 7px 9px; }
+
+.variant-add {
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  margin-top: 12px;
+}
+.variant-add-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: end;
+}
+.variant-add-grid > div { flex: 1 1 140px; }
+.variant-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 14px;
+  background: var(--bg-base);
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+}
