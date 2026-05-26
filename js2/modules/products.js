@@ -458,11 +458,23 @@ function setupVariants(p, isNew) {
     const sb = getSB();
 
     async function loadVariants() {
+        const queryId = variantState.productId;
+        const listEl = modalBody.querySelector('#variants-list');
+        if (!queryId) {
+            if (listEl) listEl.innerHTML = '<div class="empty">Variant manager: missing product id. Close and re-open the editor.</div>';
+            return;
+        }
         const { data, error } = await sb.from('product_variants')
             .select('*')
-            .eq('parent_product_id', variantState.productId)
+            .eq('parent_product_id', queryId)
             .order('sort_order', { ascending: true });
-        if (error) { toastError('Variants load failed: ' + error.message); return; }
+        // Stale-promise guard — the modal may have switched products while in flight.
+        if (variantState.productId !== queryId) return;
+        if (error) {
+            toastError('Variants load failed: ' + error.message);
+            if (listEl) listEl.innerHTML = `<div class="empty">Failed to load variants: ${escapeHTML(error.message)}</div>`;
+            return;
+        }
         variantState.variants = data || [];
         variantState.loaded = true;
         renderVariantsList();
