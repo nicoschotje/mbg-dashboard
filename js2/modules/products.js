@@ -30,6 +30,81 @@ const STRAIN_TYPES = [
 ];
 const STRAIN_EMOJI = { sativa: '☀️', hybrid: '⚖️', indica: '🌙' };
 
+// Product-level strain types — pill badge on storefront cards. Distinct from
+// the variant-level STRAIN_TYPES above (those are emoji picks for variants).
+const PRODUCT_STRAIN_TYPES = ['Sativa', 'Indica', 'Hybrid', 'Sativa Hybrid', 'Indica Hybrid'];
+const PRODUCT_STRAIN_COLORS = {
+    'Sativa':        { bg: '#dcfce7', text: '#166534', border: '#16a34a' },
+    'Indica':        { bg: '#ede9fe', text: '#5b21b6', border: '#7c3aed' },
+    'Hybrid':        { bg: '#fef9c3', text: '#854d0e', border: '#ca8a04' },
+    'Sativa Hybrid': { bg: '#ccfbf1', text: '#134e4a', border: '#0d9488' },
+    'Indica Hybrid': { bg: '#fce7f3', text: '#831843', border: '#db2777' },
+};
+
+function categoryGroupOptions(catId) {
+    const cat = state.categories.find(c => c.id === catId);
+    const name = (cat?.name || '').toLowerCase().trim();
+    if (name === 'vape' || name === 'vapes') return ['Exhale 1g', 'Exhale 2g', 'Exhale ExClub', 'Montana'];
+    if (name === 'flower' || name === 'flowers') return ['Flowers'];
+    if (name === 'edible' || name === 'edibles') return ["Willyummy's Gummies", 'Revel Bar'];
+    return null;
+}
+
+function productStrainPillsHTML(selected) {
+    return PRODUCT_STRAIN_TYPES.map(t => {
+        const active = t === selected;
+        const c = PRODUCT_STRAIN_COLORS[t];
+        const style = active
+            ? `background:${c.bg};color:${c.text};border:1px solid ${c.border}`
+            : `background:var(--bg-base);color:var(--text-muted);border:1px solid var(--border)`;
+        return `<button type="button" class="prod-strain-pill" data-strain="${escapeHTML(t)}" style="padding:6px 12px;border-radius:999px;font-size:12px;font-weight:500;cursor:pointer;${style}">${escapeHTML(t)}</button>`;
+    }).join('');
+}
+
+function renderStrainSupport(container, catId, groupVal, strainVal) {
+    const opts = categoryGroupOptions(catId);
+    if (!opts) {
+        container.style.display = 'none';
+        container.innerHTML = '';
+        return;
+    }
+    container.style.display = '';
+    const groupOptsHTML = ['<option value="">— No group —</option>']
+        .concat(opts.map(o => `<option value="${escapeHTML(o)}" ${o === groupVal ? 'selected' : ''}>${escapeHTML(o)}</option>`))
+        .join('');
+    container.innerHTML = `
+        <label class="field-label" style="margin-top:10px">Group name</label>
+        <select class="input" id="f-group-name">${groupOptsHTML}</select>
+        <div style="color:var(--text-muted);font-size:11px;margin-top:4px">Products with the same group are shown together on the storefront</div>
+
+        <label class="field-label" style="margin-top:10px">Strain type</label>
+        <div id="f-strain-pills" data-value="${escapeHTML(strainVal || '')}" style="display:flex;gap:6px;flex-wrap:wrap">${productStrainPillsHTML(strainVal)}</div>
+        <div style="color:var(--text-muted);font-size:11px;margin-top:4px">Shown as an info badge on the storefront — not used for grouping</div>
+    `;
+    const pillsEl = container.querySelector('#f-strain-pills');
+    pillsEl.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-strain]');
+        if (!btn) return;
+        const cur = pillsEl.dataset.value;
+        const val = btn.dataset.strain;
+        const next = cur === val ? '' : val;
+        pillsEl.dataset.value = next;
+        pillsEl.innerHTML = productStrainPillsHTML(next);
+    });
+}
+
+function productGroupTagHTML(name) {
+    if (!name) return '';
+    return `<span style="display:inline-block;margin-left:6px;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:500;background:#e5e7eb;color:#374151;border:1px solid #d1d5db;vertical-align:middle">${escapeHTML(name)}</span>`;
+}
+
+function productStrainTagHTML(type) {
+    if (!type) return '';
+    const c = PRODUCT_STRAIN_COLORS[type];
+    if (!c) return '';
+    return `<span style="display:inline-block;margin-left:6px;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:500;background:${c.bg};color:${c.text};border:1px solid ${c.border};vertical-align:middle">${escapeHTML(type)}</span>`;
+}
+
 // Per-open-modal variant state. Reset every time the product editor opens.
 const variantState = { productId: null, variants: [], editingId: null, loaded: false, dragId: null };
 
@@ -79,7 +154,7 @@ function rowHTML(p) {
             ${p.image_url ? `<img src="${escapeHTML(p.image_url)}" style="width:40px;height:40px;object-fit:cover;border-radius:6px" alt=""/>` : '<div style="width:40px;height:40px;background:var(--bg-base);border-radius:6px"></div>'}
               </td>
                 <td>
-                    <div style="font-weight:600">${escapeHTML(p.name || '—')}${p.is_featured ? ' ⭐' : ''}</div>
+                    <div style="font-weight:600">${escapeHTML(p.name || '—')}${p.is_featured ? ' ⭐' : ''}${productGroupTagHTML(p.group_name)}${productStrainTagHTML(p.strain_type)}</div>
                         <div style="color:var(--text-muted);font-size:11px">${escapeHTML(p.sku || '')}</div>
                           </td>
                             <td>${escapeHTML(cat)}</td>
@@ -240,6 +315,8 @@ function openForm(p) {
                                                     ${state.categories.map(c => `<option value="${c.id}" ${c.id === data.category_id ? 'selected' : ''}>${escapeHTML(c.name)}</option>`).join('')}
                                                     </select>
 
+                                                    <div id="f-strain-support"></div>
+
                                                     <div class="field-row" style="margin-top:10px">
                                                       <div style="flex:1 1 140px">
                                                           <label class="field-label">SKU</label>
@@ -285,6 +362,23 @@ function openForm(p) {
                                                                                                         </div>
                                                                                                         `;
     modalBackdrop.classList.add('show');
+
+  // Group name + strain type — only relevant for Vape / Flowers / Edibles.
+  const strainSupportEl = modalBody.querySelector('#f-strain-support');
+  const catSelect = modalBody.querySelector('#f-cat');
+  renderStrainSupport(strainSupportEl, catSelect.value, data.group_name || '', data.strain_type || '');
+  catSelect.addEventListener('change', () => {
+    const newCatId = catSelect.value;
+    const supports = !!categoryGroupOptions(newCatId);
+    // Rebuild group dropdown for the new category — previous selection won't
+    // map to the new options, so reset it. Keep strain when switching between
+    // supported categories (same 5 options); clear when switching to one that
+    // doesn't support strain.
+    const keepStrain = supports
+        ? (modalBody.querySelector('#f-strain-pills')?.dataset.value || '')
+        : '';
+    renderStrainSupport(strainSupportEl, newCatId, '', keepStrain);
+  });
 
   setupVariants(p, isNew);
 
@@ -348,6 +442,8 @@ async function save(existing) {
           // New-product mode renders no checkbox (the variant manager only
           // works after the row exists); default to false in that case.
           has_variants: modalBody.querySelector('#f-has-variants')?.checked ?? false,
+          group_name: modalBody.querySelector('#f-group-name')?.value || null,
+          strain_type: modalBody.querySelector('#f-strain-pills')?.dataset.value || null,
           updated_at: new Date().toISOString(),
     };
     if (!payload.name) return toastWarn('Name is required.');
