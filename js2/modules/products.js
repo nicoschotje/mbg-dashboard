@@ -92,8 +92,8 @@ function rowHTML(p) {
                                                   </span>
                                                     </td>
                                                       <td>
-                                                          <button class="btn btn-sm btn-ghost" data-action="edit">Edit</button>
-                                                              <button class="btn btn-sm btn-ghost" data-action="toggle">${p.is_active ? 'Disable' : 'Enable'}</button>
+                                                          <button class="btn btn-sm btn-ghost" data-action="edit" data-product-id="${escapeHTML(p.id)}">Edit</button>
+                                                              <button class="btn btn-sm btn-ghost" data-action="toggle" data-product-id="${escapeHTML(p.id)}">${p.is_active ? 'Disable' : 'Enable'}</button>
                                                                 </td>
                                                                 </tr>
                                                                 `;
@@ -186,6 +186,17 @@ function exportCSV() {
 
 function openForm(p) {
     const isNew = !p;
+    // Belt-and-suspenders: clear the module-level variantState the moment we
+    // know this is a new-product open, before any variant UI could be rendered.
+    // setupVariants does the same reset, but doing it up front means anything
+    // that reads variantState between now and setupVariants() (e.g. a stale
+    // toggle handler from a previously-closed modal) sees clean state.
+    if (isNew) {
+        variantState.productId = null;
+        variantState.variants = [];
+        variantState.editingId = null;
+        variantState.loaded = false;
+    }
     const data = p ? { ...p } : {
           name: '', description: '', price: 0, cost_price: 0,
           category_id: state.categories[0]?.id || null,
@@ -258,12 +269,14 @@ function openForm(p) {
                                                                                             <label style="display:flex;align-items:center;gap:6px;font-size:13px">
                                                                                                 <input type="checkbox" id="f-featured" ${data.is_featured ? 'checked' : ''}/> Featured
                                                                                                   </label>
-                                                                                                    <label style="display:flex;align-items:center;gap:6px;font-size:13px">
+                                                                                                    ${!isNew ? `<label style="display:flex;align-items:center;gap:6px;font-size:13px">
                                                                                                         <input type="checkbox" id="f-has-variants" ${data.has_variants ? 'checked' : ''}/> Has variants
-                                                                                                          </label>
+                                                                                                          </label>` : ''}
                                                                                                   </div>
 
-                                                                                                  <div id="f-variants-wrap"${data.has_variants ? '' : ' style="display:none"'}></div>
+                                                                                                  ${isNew
+                                                                                                    ? `<div style="margin-top:14px;padding:12px 14px;border:1px dashed var(--border);border-radius:10px;background:var(--bg-base);color:var(--text-muted);font-size:13px">Save the product first, then re-open it to manage variants.</div>`
+                                                                                                    : `<div id="f-variants-wrap"${data.has_variants ? '' : ' style="display:none"'}></div>`}
 
                                                                                                   <div class="close-row">
                                                                                                     ${!isNew ? '<button class="btn btn-sm btn-danger" data-act="delete">Delete</button>' : ''}
@@ -332,7 +345,9 @@ async function save(existing) {
           image_url: modalBody.querySelector('#f-img-url').value || null,
           is_active: modalBody.querySelector('#f-active').checked,
           is_featured: modalBody.querySelector('#f-featured').checked,
-          has_variants: modalBody.querySelector('#f-has-variants').checked,
+          // New-product mode renders no checkbox (the variant manager only
+          // works after the row exists); default to false in that case.
+          has_variants: modalBody.querySelector('#f-has-variants')?.checked ?? false,
           updated_at: new Date().toISOString(),
     };
     if (!payload.name) return toastWarn('Name is required.');
@@ -556,6 +571,13 @@ function setupVariants(p, isNew) {
     }
 
     async function setParentActive(active) {
+        // Hard guard: never write is_active without a real parent uuid. This
+        // closes the loop where a stale variantState.productId from a prior
+        // modal could flip the wrong product's active flag.
+        if (!variantState.productId) {
+            toastWarn('Save the product first before toggling grouped-product mode.');
+            return false;
+        }
         const { error } = await sb.from('products').update({ is_active: active }).eq('id', variantState.productId);
         if (error) { toastError(error.message); return false; }
         if (activeCb) activeCb.checked = active;
@@ -714,8 +736,15 @@ function buildPane() {
   listEl.addEventListener('click', async (e) => {
         const btn = e.target.closest('[data-action]');
         if (!btn) return;
-        const tr = btn.closest('tr');
-        const p = state.products.find(x => x.id === tr?.dataset.id);
+        // Resolve the product by the id stamped on the button itself, not by
+        // climbing the DOM. closest('tr') would still be correct under normal
+        // markup, but reading from data-product-id removes a class of bugs
+        // where row HTML changes (or a future wrapper element) makes the
+        // ancestor lookup return the wrong row. Fall back to the row's
+        // data-id so older renders keep working through one refresh cycle.
+        const productId = btn.dataset.productId || btn.closest('tr')?.dataset.id;
+        if (!productId) return;
+        const p = state.products.find(x => x.id === productId);
         if (!p) return;
         if (btn.dataset.action === 'edit') openForm(p);
         if (btn.dataset.action === 'toggle') await toggleActive(p);
