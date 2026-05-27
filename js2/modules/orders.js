@@ -350,12 +350,15 @@ function openDetail(order) {
 
     ${paymentReceiptHTML(order)}
 
-    <div class="close-row">
+    <div class="close-row" data-d-row>
       ${nextStatus(order.order_status) ? `<button class="btn btn-sm" data-d-action="advance">→ ${escapeHTML(STATUS_LABELS[nextStatus(order.order_status)])}</button>` : ''}
       ${order.order_status !== 'cancelled' && order.order_status !== 'completed'
         ? `<button class="btn btn-sm btn-danger" data-d-action="cancel">Cancel order</button>` : ''}
       <button class="btn btn-sm btn-ghost" data-d-action="print">Print</button>
       <button class="btn btn-sm btn-ghost" data-d-action="close">Close</button>
+      ${order.order_status === 'completed' || order.order_status === 'cancelled'
+        ? `<button class="btn btn-sm btn-ghost" data-d-action="delete-order" style="border:1px solid var(--red);color:var(--red);margin-left:auto">🗑 Delete order</button>`
+        : ''}
     </div>
   `;
   modalBackdrop.classList.add('show');
@@ -381,8 +384,74 @@ function openDetail(order) {
           else modalBackdrop.classList.remove('show');
         }
       }
+      if (action === 'delete-order') promptDeleteOrder(order);
     });
   });
+}
+
+// Inline confirmation: swaps the detail modal's action row for a
+// "Delete order #XXXXX? This cannot be undone." prompt with Confirm/Cancel.
+// Restores the row on cancel. Only reachable when status is completed/cancelled
+// (the trigger button is gated in openDetail).
+function promptDeleteOrder(order) {
+  const row = modalBody.querySelector('[data-d-row]');
+  if (!row) return;
+  const original = row.innerHTML;
+  row.innerHTML = `
+    <span style="flex:1;color:var(--text-primary);font-size:13px">
+      Delete order #${shortId(order.id)}? This cannot be undone.
+    </span>
+    <button class="btn btn-sm btn-ghost" data-d-confirm="cancel">Cancel</button>
+    <button class="btn btn-sm btn-danger"  data-d-confirm="ok">Confirm Delete</button>
+  `;
+  row.querySelector('[data-d-confirm="cancel"]').addEventListener('click', () => {
+    row.innerHTML = original;
+    // Re-attach handlers — they were lost when innerHTML was replaced.
+    rebindDetailActions(order);
+  });
+  row.querySelector('[data-d-confirm="ok"]').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true; btn.textContent = 'Deleting…';
+    await deleteOrder(order);
+  });
+}
+
+// Re-binds [data-d-action] click handlers on the action row after an inline
+// content swap (the confirmation prompt) has replaced the original buttons.
+// Mirrors the wiring inside openDetail.
+function rebindDetailActions(order) {
+  const row = modalBody.querySelector('[data-d-row]');
+  if (!row) return;
+  row.querySelectorAll('[data-d-action]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const action = btn.dataset.dAction;
+      if (action === 'close')   modalBackdrop.classList.remove('show');
+      if (action === 'advance') { await advanceStatus(order); modalBackdrop.classList.remove('show'); }
+      if (action === 'cancel')  { await cancelOrder(order);   modalBackdrop.classList.remove('show'); }
+      if (action === 'print')   printReceipt(order);
+      if (action === 'delete-order') promptDeleteOrder(order);
+    });
+  });
+}
+
+// Calls the delete_order RPC. On success: close modal, drop row from local
+// state, refresh KPIs, toast. On error: surface the message and leave the
+// modal open so the owner can retry or cancel.
+async function deleteOrder(order) {
+  const sb = getSB();
+  const { error } = await sb.rpc('delete_order', { p_order_id: order.id });
+  if (error) {
+    toastError('Failed to delete: ' + error.message);
+    // Restore the row to its pre-confirmation state so retry is possible.
+    const fresh = AppState.orders.find(o => o.id === order.id);
+    if (fresh) openDetail(fresh);
+    return;
+  }
+  AppState.orders = AppState.orders.filter(o => o.id !== order.id);
+  render();
+  AppState.emit('kpis:dirty');
+  modalBackdrop.classList.remove('show');
+  toast(`Order #${shortId(order.id)} deleted`);
 }
 
 function printReceipt(order) {
