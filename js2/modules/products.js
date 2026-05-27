@@ -21,6 +21,18 @@ const state = {
     selected: new Set(),
 };
 
+// Strain types — emoji shown in the storefront variant picker.
+const STRAIN_TYPES = [
+    { value: '', label: 'None', emoji: '' },
+    { value: 'sativa', label: 'Sativa', emoji: '☀️' },
+    { value: 'hybrid', label: 'Hybrid', emoji: '⚖️' },
+    { value: 'indica', label: 'Indica', emoji: '🌙' },
+];
+const STRAIN_EMOJI = { sativa: '☀️', hybrid: '⚖️', indica: '🌙' };
+
+// Per-open-modal variant state. Reset every time the product editor opens.
+const variantState = { productId: null, variants: [], editingId: null, loaded: false, dragId: null };
+
 async function loadAll() {
     const sb = getSB();
     // Products with category — §11.3 exact pattern
@@ -178,7 +190,7 @@ function openForm(p) {
           name: '', description: '', price: 0, cost_price: 0,
           category_id: state.categories[0]?.id || null,
           stock_qty: 0, low_stock_threshold: 10, is_active: true, is_featured: false,
-          sort_order: 0, sku: '', tags: [], image_url: '',
+          sort_order: 0, sku: '', tags: [], image_url: '', has_variants: false,
     };
 
   modalBody.innerHTML = `
@@ -246,7 +258,12 @@ function openForm(p) {
                                                                                             <label style="display:flex;align-items:center;gap:6px;font-size:13px">
                                                                                                 <input type="checkbox" id="f-featured" ${data.is_featured ? 'checked' : ''}/> Featured
                                                                                                   </label>
+                                                                                                    <label style="display:flex;align-items:center;gap:6px;font-size:13px">
+                                                                                                        <input type="checkbox" id="f-has-variants" ${data.has_variants ? 'checked' : ''}/> Has variants
+                                                                                                          </label>
                                                                                                   </div>
+
+                                                                                                  <div id="f-variants-wrap"${data.has_variants ? '' : ' style="display:none"'}></div>
 
                                                                                                   <div class="close-row">
                                                                                                     ${!isNew ? '<button class="btn btn-sm btn-danger" data-act="delete">Delete</button>' : ''}
@@ -255,6 +272,8 @@ function openForm(p) {
                                                                                                         </div>
                                                                                                         `;
     modalBackdrop.classList.add('show');
+
+  setupVariants(p, isNew);
 
   // Image upload handler — gates the Save button so the user can't submit
   // while the upload is still in flight (which would save with image_url=null
@@ -313,6 +332,7 @@ async function save(existing) {
           image_url: modalBody.querySelector('#f-img-url').value || null,
           is_active: modalBody.querySelector('#f-active').checked,
           is_featured: modalBody.querySelector('#f-featured').checked,
+          has_variants: modalBody.querySelector('#f-has-variants').checked,
           updated_at: new Date().toISOString(),
     };
     if (!payload.name) return toastWarn('Name is required.');
@@ -328,6 +348,302 @@ async function save(existing) {
     toast(existing ? `Updated ${payload.name}` : `Created ${payload.name}`);
     modalBackdrop.classList.remove('show');
     await loadAll(); render();
+}
+
+/* ---------- Variant manager (Phase 2) ---------- */
+
+function strainPill(type) {
+    if (!type) return '';
+    const emoji = STRAIN_EMOJI[type] || '';
+    const label = type.charAt(0).toUpperCase() + type.slice(1);
+    return `<span class="strain-pill">${emoji ? emoji + ' ' : ''}${escapeHTML(label)}</span>`;
+}
+
+function strainOptions(selected) {
+    return STRAIN_TYPES.map(s =>
+        `<option value="${s.value}" ${s.value === (selected || '') ? 'selected' : ''}>${s.emoji ? s.emoji + ' ' : ''}${s.label}</option>`
+    ).join('');
+}
+
+function variantRowHTML(v) {
+    if (variantState.editingId === v.id) {
+        return `
+        <div class="variant-row" data-id="${escapeHTML(v.id)}">
+          <span class="variant-handle">⠿</span>
+          <div class="variant-edit-grid">
+            <input class="input" data-f="name" value="${escapeHTML(v.name || '')}" placeholder="Variant name" />
+            <select class="input" data-f="strain">${strainOptions(v.strain_type)}</select>
+            <input class="input" data-f="price" type="number" step="0.01" min="0" value="${v.price_override ?? ''}" placeholder="Price override" />
+            <label class="toggle-switch" title="Available"><input type="checkbox" data-f="avail" ${v.is_available ? 'checked' : ''}/><span class="toggle-slider"></span></label>
+            <button class="btn btn-sm" data-action="save">Save</button>
+            <button class="btn btn-sm btn-ghost" data-action="cancel">Cancel</button>
+          </div>
+        </div>`;
+    }
+    const price = v.price_override != null ? formatCurrency(v.price_override) : 'Parent price';
+    return `
+    <div class="variant-row ${v.is_available ? '' : 'sold-out'}" draggable="true" data-id="${escapeHTML(v.id)}">
+      <span class="variant-handle" title="Drag to reorder">⠿</span>
+      <div class="variant-main" data-action="edit" title="Click to edit">
+        <span class="variant-name">${escapeHTML(v.name || '—')}</span>${strainPill(v.strain_type)}
+      </div>
+      <span class="variant-price">${price}</span>
+      <label class="toggle-switch" title="Available"><input type="checkbox" class="va-avail" ${v.is_available ? 'checked' : ''}/><span class="toggle-slider"></span></label>
+      <button class="btn btn-sm btn-danger" data-action="delete" title="Delete variant">✕</button>
+    </div>`;
+}
+
+function variantSectionHTML(parentActive) {
+    return `
+    <div class="variants-section">
+      <div class="variants-activate">
+        <div class="setting-toggle-row" style="border-bottom:none;margin-bottom:0;padding:0">
+          <label class="toggle-label">Show as grouped product in storefront</label>
+          <label class="toggle-switch">
+            <input type="checkbox" id="v-parent-active" ${parentActive ? 'checked' : ''}/>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="variants-warning">Activating this will hide the individual variant products. Make sure all variants are set up first.</div>
+      </div>
+
+      <h3 class="variants-heading">Variants</h3>
+      <div id="variants-list"><div class="empty">Loading…</div></div>
+
+      <div class="variant-add">
+        <div class="variant-add-grid">
+          <div style="flex:2 1 160px">
+            <label class="field-label">Variant name</label>
+            <input class="input" id="va-name" placeholder="e.g. Northern Lights" />
+          </div>
+          <div>
+            <label class="field-label">Strain type</label>
+            <select class="input" id="va-strain">${strainOptions('')}</select>
+          </div>
+          <div>
+            <label class="field-label">Price override</label>
+            <input class="input" id="va-price" type="number" step="0.01" min="0" placeholder="Optional" />
+          </div>
+          <div style="flex:0 0 auto;display:flex;align-items:center;gap:6px;padding-bottom:8px">
+            <label class="toggle-switch" title="Available"><input type="checkbox" id="va-avail" checked /><span class="toggle-slider"></span></label>
+            <span style="font-size:12px;color:var(--text-muted)">Available</span>
+          </div>
+        </div>
+        <button class="btn btn-sm" id="va-add" style="margin-top:10px">Add Variant</button>
+      </div>
+    </div>`;
+}
+
+function renderVariantsList() {
+    const listEl = modalBody.querySelector('#variants-list');
+    if (!listEl) return;
+    const rows = variantState.variants;
+    listEl.innerHTML = rows.length
+        ? rows.map(variantRowHTML).join('')
+        : '<div class="empty">No variants yet. Add one below.</div>';
+}
+
+function setupVariants(p, isNew) {
+    variantState.productId = p?.id || null;
+    variantState.variants = [];
+    variantState.editingId = null;
+    variantState.loaded = false;
+    variantState.dragId = null;
+
+    const wrap = modalBody.querySelector('#f-variants-wrap');
+    const hasCb = modalBody.querySelector('#f-has-variants');
+    const activeCb = modalBody.querySelector('#f-active');
+    if (!wrap || !hasCb) return;
+
+    const sb = getSB();
+
+    async function loadVariants() {
+        const queryId = variantState.productId;
+        const listEl = modalBody.querySelector('#variants-list');
+        if (!queryId) {
+            if (listEl) listEl.innerHTML = '<div class="empty">Variant manager: missing product id. Close and re-open the editor.</div>';
+            return;
+        }
+        const { data, error } = await sb.from('product_variants')
+            .select('*')
+            .eq('parent_product_id', queryId)
+            .order('sort_order', { ascending: true });
+        // Stale-promise guard — the modal may have switched products while in flight.
+        if (variantState.productId !== queryId) return;
+        if (error) {
+            toastError('Variants load failed: ' + error.message);
+            if (listEl) listEl.innerHTML = `<div class="empty">Failed to load variants: ${escapeHTML(error.message)}</div>`;
+            return;
+        }
+        variantState.variants = data || [];
+        variantState.loaded = true;
+        renderVariantsList();
+    }
+
+    async function addVariant() {
+        const name = modalBody.querySelector('#va-name').value.trim();
+        if (!name) return toastWarn('Variant name is required.');
+        const strain = modalBody.querySelector('#va-strain').value || null;
+        const priceRaw = modalBody.querySelector('#va-price').value;
+        const priceOverride = priceRaw === '' ? null : parseFloat(priceRaw);
+        const available = modalBody.querySelector('#va-avail').checked;
+        const nextOrder = variantState.variants.reduce((m, v) => Math.max(m, v.sort_order ?? 0), -1) + 1;
+
+        const { data, error } = await sb.from('product_variants').insert([{
+            parent_product_id: variantState.productId,
+            name, strain_type: strain, price_override: priceOverride,
+            is_available: available, sort_order: nextOrder,
+        }]).select().single();
+        if (error) return toastError(error.message);
+        variantState.variants.push(data);
+        renderVariantsList();
+        modalBody.querySelector('#va-name').value = '';
+        modalBody.querySelector('#va-price').value = '';
+        modalBody.querySelector('#va-strain').value = '';
+        modalBody.querySelector('#va-avail').checked = true;
+        toast(`Added variant: ${name}`);
+    }
+
+    async function saveVariantEdit(id, rowEl) {
+        const name = rowEl.querySelector('[data-f="name"]').value.trim();
+        if (!name) return toastWarn('Variant name is required.');
+        const strain = rowEl.querySelector('[data-f="strain"]').value || null;
+        const priceRaw = rowEl.querySelector('[data-f="price"]').value;
+        const priceOverride = priceRaw === '' ? null : parseFloat(priceRaw);
+        const available = rowEl.querySelector('[data-f="avail"]').checked;
+
+        const { error } = await sb.from('product_variants').update({
+            name, strain_type: strain, price_override: priceOverride,
+            is_available: available, updated_at: new Date().toISOString(),
+        }).eq('id', id);
+        if (error) return toastError(error.message);
+        const v = variantState.variants.find(x => x.id === id);
+        if (v) Object.assign(v, { name, strain_type: strain, price_override: priceOverride, is_available: available });
+        variantState.editingId = null;
+        renderVariantsList();
+        toast('Variant updated');
+    }
+
+    async function toggleAvailable(id, available) {
+        const { error } = await sb.from('product_variants').update({
+            is_available: available, updated_at: new Date().toISOString(),
+        }).eq('id', id);
+        if (error) { toastError(error.message); renderVariantsList(); return; }
+        const v = variantState.variants.find(x => x.id === id);
+        if (v) v.is_available = available;
+        renderVariantsList();
+    }
+
+    async function deleteVariant(id) {
+        const v = variantState.variants.find(x => x.id === id);
+        if (!confirm(`Delete variant "${v?.name || ''}"?`)) return;
+        const { error } = await sb.from('product_variants').delete().eq('id', id);
+        if (error) return toastError(error.message);
+        variantState.variants = variantState.variants.filter(x => x.id !== id);
+        if (variantState.editingId === id) variantState.editingId = null;
+        renderVariantsList();
+        toast('Variant deleted');
+    }
+
+    async function persistOrder() {
+        const updates = variantState.variants.map((v, i) => {
+            v.sort_order = i;
+            return sb.from('product_variants').update({ sort_order: i }).eq('id', v.id);
+        });
+        const results = await Promise.all(updates);
+        const failed = results.find(r => r.error);
+        if (failed) toastError('Reorder failed: ' + failed.error.message);
+    }
+
+    async function setParentActive(active) {
+        const { error } = await sb.from('products').update({ is_active: active }).eq('id', variantState.productId);
+        if (error) { toastError(error.message); return false; }
+        if (activeCb) activeCb.checked = active;
+        if (p) p.is_active = active;
+        const row = state.products.find(x => x.id === variantState.productId);
+        if (row) row.is_active = active;
+        render();
+        toast(active ? 'Shown as grouped product' : 'Grouped product hidden');
+        return true;
+    }
+
+    function wireSection() {
+        modalBody.querySelector('#va-add').addEventListener('click', addVariant);
+        modalBody.querySelector('#v-parent-active').addEventListener('change', async (e) => {
+            const ok = await setParentActive(e.target.checked);
+            if (!ok) e.target.checked = !e.target.checked;
+        });
+
+        const listEl = modalBody.querySelector('#variants-list');
+
+        listEl.addEventListener('click', (e) => {
+            const btn = e.target.closest('[data-action]');
+            if (!btn) return;
+            const row = btn.closest('.variant-row');
+            const id = row?.dataset.id;
+            if (!id) return;
+            const act = btn.dataset.action;
+            if (act === 'edit') { variantState.editingId = id; renderVariantsList(); }
+            else if (act === 'cancel') { variantState.editingId = null; renderVariantsList(); }
+            else if (act === 'save') saveVariantEdit(id, row);
+            else if (act === 'delete') deleteVariant(id);
+        });
+
+        listEl.addEventListener('change', (e) => {
+            if (!e.target.classList.contains('va-avail')) return;
+            const row = e.target.closest('.variant-row');
+            if (row) toggleAvailable(row.dataset.id, e.target.checked);
+        });
+
+        // Drag to reorder
+        listEl.addEventListener('dragstart', (e) => {
+            const row = e.target.closest('.variant-row');
+            if (!row) return;
+            variantState.dragId = row.dataset.id;
+            row.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+        });
+        listEl.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            const row = e.target.closest('.variant-row');
+            listEl.querySelectorAll('.drop-target').forEach(r => r.classList.remove('drop-target'));
+            if (row && row.dataset.id !== variantState.dragId) row.classList.add('drop-target');
+        });
+        listEl.addEventListener('drop', async (e) => {
+            e.preventDefault();
+            const row = e.target.closest('.variant-row');
+            const targetId = row?.dataset.id;
+            const dragId = variantState.dragId;
+            if (!targetId || !dragId || targetId === dragId) return;
+            const arr = variantState.variants;
+            const from = arr.findIndex(v => v.id === dragId);
+            const dragged = arr.splice(from, 1)[0];
+            const to = arr.findIndex(v => v.id === targetId);
+            arr.splice(to, 0, dragged);
+            renderVariantsList();
+            await persistOrder();
+        });
+        listEl.addEventListener('dragend', () => {
+            variantState.dragId = null;
+            listEl.querySelectorAll('.dragging, .drop-target').forEach(r => r.classList.remove('dragging', 'drop-target'));
+        });
+    }
+
+    function paint() {
+        if (!hasCb.checked) { wrap.style.display = 'none'; wrap.innerHTML = ''; return; }
+        wrap.style.display = '';
+        if (isNew) {
+            wrap.innerHTML = `<div class="variants-section"><h3 class="variants-heading">Variants</h3><div class="variant-hint">Save the product first, then re-open it to add and manage variants.</div></div>`;
+            return;
+        }
+        wrap.innerHTML = variantSectionHTML(activeCb ? activeCb.checked : false);
+        wireSection();
+        if (!variantState.loaded) loadVariants();
+        else renderVariantsList();
+    }
+
+    hasCb.addEventListener('change', paint);
+    if (hasCb.checked) paint();
 }
 
 /* ---------- Mount ---------- */
