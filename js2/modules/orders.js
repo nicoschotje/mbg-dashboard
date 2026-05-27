@@ -350,6 +350,17 @@ function openDetail(order) {
 
     ${paymentReceiptHTML(order)}
 
+    ${['confirmed','preparing','out_for_delivery','completed'].includes(order.order_status) ? `
+      <div class="card" style="margin-bottom:14px">
+        <div style="font-weight:600;margin-bottom:8px">Send message to customer</div>
+        <textarea class="input" id="d-eta" rows="3"
+          placeholder="e.g. Your order will arrive in 30–45 minutes. Rider: Juan +639XX XXX XXXX">${escapeHTML(order.delivery_notes || '')}</textarea>
+        <div style="margin-top:10px;display:flex;justify-content:flex-end">
+          <button class="btn btn-sm" data-d-action="send-eta" ${(order.delivery_notes || '').trim() ? '' : 'disabled'}>Send</button>
+        </div>
+      </div>
+    ` : ''}
+
     <div class="close-row" data-d-row>
       ${nextStatus(order.order_status) ? `<button class="btn btn-sm" data-d-action="advance">→ ${escapeHTML(STATUS_LABELS[nextStatus(order.order_status)])}</button>` : ''}
       ${order.order_status !== 'cancelled' && order.order_status !== 'completed'
@@ -385,8 +396,19 @@ function openDetail(order) {
         }
       }
       if (action === 'delete-order') promptDeleteOrder(order);
+      if (action === 'send-eta') await sendCustomerMessage(order);
     });
   });
+
+  // Customer-message textarea: enable/disable Send as the operator types.
+  // The Send click itself is routed through [data-d-action="send-eta"] above.
+  const etaTextarea = modalBody.querySelector('#d-eta');
+  if (etaTextarea) {
+    const sendBtn = modalBody.querySelector('[data-d-action="send-eta"]');
+    etaTextarea.addEventListener('input', () => {
+      if (sendBtn) sendBtn.disabled = !etaTextarea.value.trim();
+    });
+  }
 }
 
 // Inline confirmation: swaps the detail modal's action row for a
@@ -432,6 +454,43 @@ function rebindDetailActions(order) {
       if (action === 'delete-order') promptDeleteOrder(order);
     });
   });
+}
+
+// Persists the owner's ETA / status message into orders.delivery_notes and
+// forwards it to the customer via the notify-customer edge function (Telegram).
+// Modal stays open per spec. Telegram is fire-and-forget — a missing
+// telegram_chat_id is a no-op on the edge fn side (returns notified:false),
+// so we only warn on actual edge-fn failures.
+async function sendCustomerMessage(order) {
+  const ta = modalBody.querySelector('#d-eta');
+  const msg = (ta?.value || '').trim();
+  if (!msg) return;
+
+  const sendBtn = modalBody.querySelector('[data-d-action="send-eta"]');
+  if (sendBtn) { sendBtn.disabled = true; sendBtn.textContent = 'Sending…'; }
+
+  const sb = getSB();
+  const { error } = await sb.from('orders').update({
+    delivery_notes: msg,
+    updated_at: new Date().toISOString(),
+  }).eq('id', order.id);
+
+  if (error) {
+    toastError('Failed to save: ' + error.message);
+    if (sendBtn) { sendBtn.disabled = false; sendBtn.textContent = 'Send'; }
+    return;
+  }
+
+  order.delivery_notes = msg;
+  const local = AppState.orders.find(o => o.id === order.id);
+  if (local) local.delivery_notes = msg;
+
+  sb.functions.invoke('notify-customer', {
+    body: { order_id: order.id, custom_message: msg, new_status: order.order_status },
+  }).catch(() => toastWarn('Saved. Telegram notification failed.'));
+
+  toast('Message sent to customer');
+  if (sendBtn) { sendBtn.disabled = false; sendBtn.textContent = 'Send'; }
 }
 
 // Calls the delete_order RPC. On success: close modal, drop row from local
