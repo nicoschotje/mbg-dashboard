@@ -92,8 +92,8 @@ function rowHTML(p) {
                                                   </span>
                                                     </td>
                                                       <td>
-                                                          <button class="btn btn-sm btn-ghost" data-action="edit">Edit</button>
-                                                              <button class="btn btn-sm btn-ghost" data-action="toggle">${p.is_active ? 'Disable' : 'Enable'}</button>
+                                                          <button class="btn btn-sm btn-ghost" data-action="edit" data-product-id="${escapeHTML(p.id)}">Edit</button>
+                                                              <button class="btn btn-sm btn-ghost" data-action="toggle" data-product-id="${escapeHTML(p.id)}">${p.is_active ? 'Disable' : 'Enable'}</button>
                                                                 </td>
                                                                 </tr>
                                                                 `;
@@ -714,8 +714,15 @@ function buildPane() {
   listEl.addEventListener('click', async (e) => {
         const btn = e.target.closest('[data-action]');
         if (!btn) return;
-        const tr = btn.closest('tr');
-        const p = state.products.find(x => x.id === tr?.dataset.id);
+        // Resolve the product by the id stamped on the button itself, not by
+        // climbing the DOM. closest('tr') would still be correct under normal
+        // markup, but reading from data-product-id removes a class of bugs
+        // where row HTML changes (or a future wrapper element) makes the
+        // ancestor lookup return the wrong row. Fall back to the row's
+        // data-id so older renders keep working through one refresh cycle.
+        const productId = btn.dataset.productId || btn.closest('tr')?.dataset.id;
+        if (!productId) return;
+        const p = state.products.find(x => x.id === productId);
         if (!p) return;
         if (btn.dataset.action === 'edit') openForm(p);
         if (btn.dataset.action === 'toggle') await toggleActive(p);
