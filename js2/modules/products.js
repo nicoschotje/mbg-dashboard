@@ -15,6 +15,7 @@ let modalBody = null;
 const state = {
     products: [],
     categories: [],
+    subcategories: [],
     search: '',
     filterCategory: 'all',
     filterActive: 'all', // all | active | inactive
@@ -36,16 +37,19 @@ const variantState = { productId: null, variants: [], editingId: null, loaded: f
 async function loadAll() {
     const sb = getSB();
     // Products with category — §11.3 exact pattern
-  const [{ data: products, error: pErr }, { data: cats, error: cErr }] = await Promise.all([
+  const [{ data: products, error: pErr }, { data: cats, error: cErr }, { data: subs, error: sErr }] = await Promise.all([
         sb.from('products')
           .select('*, categories(name, color, icon)')
           .order('sort_order', { ascending: true }),
         sb.from('categories').select('id, name, color, icon, is_active').order('sort_order', { ascending: true }),
+        sb.from('subcategories').select('id, category_id, name, sort_order, is_active').order('sort_order', { ascending: true }),
       ]);
     if (pErr) toastError('Products load failed: ' + pErr.message);
     if (cErr) toastError('Categories load failed: ' + cErr.message);
+    if (sErr) toastError('Subcategories load failed: ' + sErr.message);
     state.products = products || [];
     state.categories = cats || [];
+    state.subcategories = subs || [];
     AppState.products = state.products;
     AppState.categories = state.categories;
 }
@@ -69,6 +73,19 @@ function filtered() {
     return rows;
 }
 
+function subcatName(id) {
+    if (!id) return '';
+    const s = state.subcategories.find(x => x.id === id);
+    return s ? s.name : '';
+}
+
+// Grey pill showing the product's subcategory name (when set), inline by name.
+function listBadges(p) {
+    const name = subcatName(p.subcategory_id);
+    if (!name) return '';
+    return ` <span style="display:inline-block;padding:1px 7px;border-radius:999px;font-size:10px;background:var(--bg-base);color:var(--text-muted);border:1px solid var(--border);vertical-align:middle">${escapeHTML(name)}</span>`;
+}
+
 function rowHTML(p) {
     const cat = p.categories?.name || '—';
     const checked = state.selected.has(p.id) ? 'checked' : '';
@@ -79,7 +96,7 @@ function rowHTML(p) {
             ${p.image_url ? `<img src="${escapeHTML(p.image_url)}" style="width:40px;height:40px;object-fit:cover;border-radius:6px" alt=""/>` : '<div style="width:40px;height:40px;background:var(--bg-base);border-radius:6px"></div>'}
               </td>
                 <td>
-                    <div style="font-weight:600">${escapeHTML(p.name || '—')}${p.is_featured ? ' ⭐' : ''}</div>
+                    <div style="font-weight:600">${escapeHTML(p.name || '—')}${p.is_featured ? ' ⭐' : ''}${listBadges(p)}</div>
                         <div style="color:var(--text-muted);font-size:11px">${escapeHTML(p.sku || '')}</div>
                           </td>
                             <td>${escapeHTML(cat)}</td>
@@ -202,6 +219,7 @@ function openForm(p) {
           category_id: state.categories[0]?.id || null,
           stock_qty: 0, low_stock_threshold: 10, is_active: true, is_featured: false,
           sort_order: 0, sku: '', tags: [], image_url: '', has_variants: false,
+          subcategory_id: null,
     };
 
   modalBody.innerHTML = `
@@ -239,6 +257,9 @@ function openForm(p) {
                                                   <select class="input" id="f-cat">
                                                     ${state.categories.map(c => `<option value="${c.id}" ${c.id === data.category_id ? 'selected' : ''}>${escapeHTML(c.name)}</option>`).join('')}
                                                     </select>
+
+                                                    <label class="field-label" style="margin-top:10px">Subcategory</label>
+                                                    <select class="input" id="f-subcat"></select>
 
                                                     <div class="field-row" style="margin-top:10px">
                                                       <div style="flex:1 1 140px">
@@ -288,6 +309,14 @@ function openForm(p) {
 
   setupVariants(p, isNew);
 
+  // Subcategory — populate from the product's current category, then repaint
+  // (and reset the selection) whenever the category changes.
+  const catSelect = modalBody.querySelector('#f-cat');
+  paintSubcategory(catSelect.value, data.subcategory_id);
+  catSelect.addEventListener('change', () => {
+        paintSubcategory(catSelect.value, '');
+  });
+
   // Image upload handler — gates the Save button so the user can't submit
   // while the upload is still in flight (which would save with image_url=null
   // for a new product, or the previous URL when editing).
@@ -328,6 +357,19 @@ function openForm(p) {
   });
 }
 
+/* ---------- Subcategory editor field ---------- */
+
+// Populate the #f-subcat dropdown with the subcategories belonging to the
+// given parent category (ordered by sort_order, as loaded), marking `selected`
+// active. `— None —` saves NULL.
+function paintSubcategory(categoryId, selected) {
+    const sel = modalBody.querySelector('#f-subcat');
+    if (!sel) return;
+    const subs = state.subcategories.filter(s => s.category_id === categoryId);
+    sel.innerHTML = `<option value="">— None —</option>` +
+        subs.map(s => `<option value="${escapeHTML(s.id)}" ${s.id === (selected || '') ? 'selected' : ''}>${escapeHTML(s.name)}</option>`).join('');
+}
+
 async function save(existing) {
     const sb = getSB();
     const catSelect = modalBody.querySelector('#f-cat');
@@ -348,6 +390,8 @@ async function save(existing) {
           // New-product mode renders no checkbox (the variant manager only
           // works after the row exists); default to false in that case.
           has_variants: modalBody.querySelector('#f-has-variants')?.checked ?? false,
+          // Subcategory: the chosen subcategories.id, or NULL when "— None —".
+          subcategory_id: modalBody.querySelector('#f-subcat').value || null,
           updated_at: new Date().toISOString(),
     };
     if (!payload.name) return toastWarn('Name is required.');
