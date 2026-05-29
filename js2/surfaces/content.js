@@ -13,6 +13,7 @@ const ctx = {};
 const TITLES = {
   products: 'Content · Products',
   categories: 'Content · Categories',
+  subcategories: 'Content · Subcategories',
   banners: 'Content · Banners',
   announcements: 'Content · Announcements',
   discounts: 'Content · Discounts',

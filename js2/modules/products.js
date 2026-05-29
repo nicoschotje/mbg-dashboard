@@ -15,6 +15,7 @@ let modalBody = null;
 const state = {
     products: [],
     categories: [],
+    subcategories: [],
     search: '',
     filterCategory: 'all',
     filterActive: 'all', // all | active | inactive
@@ -30,43 +31,25 @@ const STRAIN_TYPES = [
 ];
 const STRAIN_EMOJI = { sativa: '☀️', hybrid: '⚖️', indica: '🌙' };
 
-// ---- Product-level group name + strain type (Part A) ----
-// Group name is a per-category merchandising group. Only these three
-// categories support it (matched case-insensitively against the category
-// name); every other category hides the field entirely.
-const GROUP_OPTIONS = {
-    vape: ['Exhale 1g', 'Exhale 2g', 'ExClub', 'Montana'],
-    flowers: ['Flowers'],
-    edibles: ["Willyummy's Gummies", 'Revel Bar'],
-};
-// Strain type shares the same supported-category set as group name. Each
-// option has its own colour for the editor pills and the list badge.
-const STRAIN_OPTIONS = [
-    { value: 'Sativa', color: '#f59e0b' },
-    { value: 'Indica', color: '#8b5cf6' },
-    { value: 'Hybrid', color: '#22c55e' },
-    { value: 'Sativa Hybrid', color: '#84cc16' },
-    { value: 'Indica Hybrid', color: '#6366f1' },
-];
-const STRAIN_COLORS = Object.fromEntries(STRAIN_OPTIONS.map(s => [s.value, s.color]));
-const categorySupportsGroupStrain = (name) => !!GROUP_OPTIONS[(name || '').toLowerCase()];
-
 // Per-open-modal variant state. Reset every time the product editor opens.
 const variantState = { productId: null, variants: [], editingId: null, loaded: false, dragId: null };
 
 async function loadAll() {
     const sb = getSB();
     // Products with category — §11.3 exact pattern
-  const [{ data: products, error: pErr }, { data: cats, error: cErr }] = await Promise.all([
+  const [{ data: products, error: pErr }, { data: cats, error: cErr }, { data: subs, error: sErr }] = await Promise.all([
         sb.from('products')
           .select('*, categories(name, color, icon)')
           .order('sort_order', { ascending: true }),
         sb.from('categories').select('id, name, color, icon, is_active').order('sort_order', { ascending: true }),
+        sb.from('subcategories').select('id, category_id, name, sort_order, is_active').order('sort_order', { ascending: true }),
       ]);
     if (pErr) toastError('Products load failed: ' + pErr.message);
     if (cErr) toastError('Categories load failed: ' + cErr.message);
+    if (sErr) toastError('Subcategories load failed: ' + sErr.message);
     state.products = products || [];
     state.categories = cats || [];
+    state.subcategories = subs || [];
     AppState.products = state.products;
     AppState.categories = state.categories;
 }
@@ -90,18 +73,17 @@ function filtered() {
     return rows;
 }
 
-// Grey pill for the merchandising group, coloured pill for the strain type.
-// Both render only when set; shown inline next to the product name.
+function subcatName(id) {
+    if (!id) return '';
+    const s = state.subcategories.find(x => x.id === id);
+    return s ? s.name : '';
+}
+
+// Grey pill showing the product's subcategory name (when set), inline by name.
 function listBadges(p) {
-    let out = '';
-    if (p.group_name) {
-        out += ` <span style="display:inline-block;padding:1px 7px;border-radius:999px;font-size:10px;background:var(--bg-base);color:var(--text-muted);border:1px solid var(--border);vertical-align:middle">${escapeHTML(p.group_name)}</span>`;
-    }
-    if (p.strain_type) {
-        const color = STRAIN_COLORS[p.strain_type] || 'var(--text-muted)';
-        out += ` <span style="display:inline-block;padding:1px 7px;border-radius:999px;font-size:10px;background:${color};color:#fff;vertical-align:middle">${escapeHTML(p.strain_type)}</span>`;
-    }
-    return out;
+    const name = subcatName(p.subcategory_id);
+    if (!name) return '';
+    return ` <span style="display:inline-block;padding:1px 7px;border-radius:999px;font-size:10px;background:var(--bg-base);color:var(--text-muted);border:1px solid var(--border);vertical-align:middle">${escapeHTML(name)}</span>`;
 }
 
 function rowHTML(p) {
@@ -237,6 +219,7 @@ function openForm(p) {
           category_id: state.categories[0]?.id || null,
           stock_qty: 0, low_stock_threshold: 10, is_active: true, is_featured: false,
           sort_order: 0, sku: '', tags: [], image_url: '', has_variants: false,
+          subcategory_id: null,
     };
 
   modalBody.innerHTML = `
@@ -275,16 +258,8 @@ function openForm(p) {
                                                     ${state.categories.map(c => `<option value="${c.id}" ${c.id === data.category_id ? 'selected' : ''}>${escapeHTML(c.name)}</option>`).join('')}
                                                     </select>
 
-                                                    <div id="f-group-wrap" style="margin-top:10px;display:none">
-                                                      <label class="field-label">Group name</label>
-                                                      <select class="input" id="f-group"></select>
-                                                    </div>
-
-                                                    <div id="f-strain-wrap" style="margin-top:10px;display:none">
-                                                      <label class="field-label">Strain type</label>
-                                                      <div id="f-strain-pills" style="display:flex;gap:8px;flex-wrap:wrap"></div>
-                                                      <input type="hidden" id="f-strain-val" value="${escapeHTML(data.strain_type || '')}"/>
-                                                    </div>
+                                                    <label class="field-label" style="margin-top:10px">Subcategory</label>
+                                                    <select class="input" id="f-subcat"></select>
 
                                                     <div class="field-row" style="margin-top:10px">
                                                       <div style="flex:1 1 140px">
@@ -334,14 +309,12 @@ function openForm(p) {
 
   setupVariants(p, isNew);
 
-  // Group name + strain type — paint for the initial category, then repaint on
-  // change. Group always resets on a category switch; strain is preserved
-  // across supported categories but cleared once an unsupported one is picked.
+  // Subcategory — populate from the product's current category, then repaint
+  // (and reset the selection) whenever the category changes.
   const catSelect = modalBody.querySelector('#f-cat');
-  paintGroupStrain(categoryNameById(catSelect.value), { group: data.group_name, strain: data.strain_type });
+  paintSubcategory(catSelect.value, data.subcategory_id);
   catSelect.addEventListener('change', () => {
-        const keptStrain = modalBody.querySelector('#f-strain-val').value;
-        paintGroupStrain(categoryNameById(catSelect.value), { group: '', strain: keptStrain });
+        paintSubcategory(catSelect.value, '');
   });
 
   // Image upload handler — gates the Save button so the user can't submit
@@ -384,59 +357,17 @@ function openForm(p) {
   });
 }
 
-/* ---------- Group name + strain type editor (Part A) ---------- */
+/* ---------- Subcategory editor field ---------- */
 
-function categoryNameById(id) {
-    return (state.categories.find(c => c.id === id) || {}).name || '';
-}
-
-// Re-render the strain pills, marking `strainVal` active. Clicking the active
-// pill deselects (one-at-a-time, click-active-to-deselect). The current
-// selection lives in the #f-strain-val hidden input.
-function renderStrainPills(strainVal) {
-    const pillsEl = modalBody.querySelector('#f-strain-pills');
-    if (!pillsEl) return;
-    pillsEl.innerHTML = STRAIN_OPTIONS.map(s => {
-        const active = s.value === strainVal;
-        const style = active
-            ? `background:${s.color};border:1px solid ${s.color};color:#fff`
-            : `background:transparent;border:1px solid ${s.color};color:${s.color}`;
-        return `<button type="button" class="strain-pick" data-strain="${escapeHTML(s.value)}" style="padding:5px 12px;border-radius:999px;font-size:12px;cursor:pointer;${style}">${escapeHTML(s.value)}</button>`;
-    }).join('');
-    pillsEl.querySelectorAll('.strain-pick').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const valField = modalBody.querySelector('#f-strain-val');
-            const next = valField.value === btn.dataset.strain ? '' : btn.dataset.strain;
-            valField.value = next;
-            renderStrainPills(next);
-        });
-    });
-}
-
-// Show/hide and populate the group + strain fields for the given category.
-// Unsupported categories hide both and clear the strain selection.
-function paintGroupStrain(catName, { group, strain }) {
-    const key = (catName || '').toLowerCase();
-    const opts = GROUP_OPTIONS[key];
-    const supported = !!opts;
-    const groupWrap = modalBody.querySelector('#f-group-wrap');
-    const groupSel = modalBody.querySelector('#f-group');
-    const strainWrap = modalBody.querySelector('#f-strain-wrap');
-    const strainVal = modalBody.querySelector('#f-strain-val');
-
-    if (supported) {
-        groupSel.innerHTML = `<option value="">— No group —</option>` +
-            opts.map(o => `<option value="${escapeHTML(o)}" ${o === (group || '') ? 'selected' : ''}>${escapeHTML(o)}</option>`).join('');
-        groupWrap.style.display = '';
-        strainVal.value = strain || '';
-        renderStrainPills(strainVal.value);
-        strainWrap.style.display = '';
-    } else {
-        groupSel.innerHTML = '';
-        groupWrap.style.display = 'none';
-        strainVal.value = '';
-        strainWrap.style.display = 'none';
-    }
+// Populate the #f-subcat dropdown with the subcategories belonging to the
+// given parent category (ordered by sort_order, as loaded), marking `selected`
+// active. `— None —` saves NULL.
+function paintSubcategory(categoryId, selected) {
+    const sel = modalBody.querySelector('#f-subcat');
+    if (!sel) return;
+    const subs = state.subcategories.filter(s => s.category_id === categoryId);
+    sel.innerHTML = `<option value="">— None —</option>` +
+        subs.map(s => `<option value="${escapeHTML(s.id)}" ${s.id === (selected || '') ? 'selected' : ''}>${escapeHTML(s.name)}</option>`).join('');
 }
 
 async function save(existing) {
@@ -459,12 +390,8 @@ async function save(existing) {
           // New-product mode renders no checkbox (the variant manager only
           // works after the row exists); default to false in that case.
           has_variants: modalBody.querySelector('#f-has-variants')?.checked ?? false,
-          // Group + strain: NULL when the field is hidden (unsupported
-          // category) or left unselected.
-          group_name: modalBody.querySelector('#f-group-wrap').style.display !== 'none'
-                ? (modalBody.querySelector('#f-group').value || null) : null,
-          strain_type: modalBody.querySelector('#f-strain-wrap').style.display !== 'none'
-                ? (modalBody.querySelector('#f-strain-val').value || null) : null,
+          // Subcategory: the chosen subcategories.id, or NULL when "— None —".
+          subcategory_id: modalBody.querySelector('#f-subcat').value || null,
           updated_at: new Date().toISOString(),
     };
     if (!payload.name) return toastWarn('Name is required.');
