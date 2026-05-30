@@ -1,0 +1,5 @@
+-- place_customer_order is now variant-aware: when an order line carries a
+-- variant_id, stock is validated/decremented on product_variants (auto
+-- sold-out at 0) instead of the parent product. Lines without variant_id keep
+-- the original parent-stock behaviour. NULL variant stock_qty = untracked.
+-- (Full function body applied via Supabase migration 20260530000100.)
