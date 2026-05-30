@@ -720,3 +720,11 @@ label.field-label {
   border: 1px dashed var(--border);
   border-radius: 12px;
 }
+
+/* Per-variant stock badge in the product variant manager */
+.variant-stock{
+  min-width:34px;text-align:center;font-family:'JetBrains Mono',monospace;
+  font-size:12px;color:var(--text-muted);padding:2px 6px;border-radius:6px;
+  background:var(--bg-base);border:1px solid var(--border);
+}
+.variant-row.sold-out .variant-stock{color:var(--danger,#ff5c5c);}
