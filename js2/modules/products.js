@@ -433,6 +433,7 @@ function variantRowHTML(v) {
             <input class="input" data-f="name" value="${escapeHTML(v.name || '')}" placeholder="Variant name" />
             <select class="input" data-f="strain">${strainOptions(v.strain_type)}</select>
             <input class="input" data-f="price" type="number" step="0.01" min="0" value="${v.price_override ?? ''}" placeholder="Price override" />
+            <input class="input" data-f="stock" type="number" min="0" value="${v.stock_qty ?? ''}" placeholder="Stock (blank = ∞)" />
             <label class="toggle-switch" title="Available"><input type="checkbox" data-f="avail" ${v.is_available ? 'checked' : ''}/><span class="toggle-slider"></span></label>
             <button class="btn btn-sm" data-action="save">Save</button>
             <button class="btn btn-sm btn-ghost" data-action="cancel">Cancel</button>
@@ -447,6 +448,7 @@ function variantRowHTML(v) {
         <span class="variant-name">${escapeHTML(v.name || '—')}</span>${strainPill(v.strain_type)}
       </div>
       <span class="variant-price">${price}</span>
+      <span class="variant-stock" title="Stock remaining (∞ = untracked)">${v.stock_qty == null ? '∞' : v.stock_qty}</span>
       <label class="toggle-switch" title="Available"><input type="checkbox" class="va-avail" ${v.is_available ? 'checked' : ''}/><span class="toggle-slider"></span></label>
       <button class="btn btn-sm btn-danger" data-action="delete" title="Delete variant">✕</button>
     </div>`;
@@ -482,6 +484,10 @@ function variantSectionHTML(parentActive) {
           <div>
             <label class="field-label">Price override</label>
             <input class="input" id="va-price" type="number" step="0.01" min="0" placeholder="Optional" />
+          </div>
+          <div>
+            <label class="field-label">Stock</label>
+            <input class="input" id="va-stock" type="number" min="0" placeholder="∞ (blank)" />
           </div>
           <div style="flex:0 0 auto;display:flex;align-items:center;gap:6px;padding-bottom:8px">
             <label class="toggle-switch" title="Available"><input type="checkbox" id="va-avail" checked /><span class="toggle-slider"></span></label>
@@ -546,18 +552,23 @@ function setupVariants(p, isNew) {
         const priceRaw = modalBody.querySelector('#va-price').value;
         const priceOverride = priceRaw === '' ? null : parseFloat(priceRaw);
         const available = modalBody.querySelector('#va-avail').checked;
+        // Blank stock = untracked (∞). A number = stock-tracked: checkout
+        // decrements it and it auto-sells-out at 0.
+        const stockRaw = modalBody.querySelector('#va-stock').value;
+        const stockQty = stockRaw === '' ? null : Math.max(0, parseInt(stockRaw, 10) || 0);
         const nextOrder = variantState.variants.reduce((m, v) => Math.max(m, v.sort_order ?? 0), -1) + 1;
 
         const { data, error } = await sb.from('product_variants').insert([{
             parent_product_id: variantState.productId,
             name, strain_type: strain, price_override: priceOverride,
-            is_available: available, sort_order: nextOrder,
+            is_available: available, sort_order: nextOrder, stock_qty: stockQty,
         }]).select().single();
         if (error) return toastError(error.message);
         variantState.variants.push(data);
         renderVariantsList();
         modalBody.querySelector('#va-name').value = '';
         modalBody.querySelector('#va-price').value = '';
+        modalBody.querySelector('#va-stock').value = '';
         modalBody.querySelector('#va-strain').value = '';
         modalBody.querySelector('#va-avail').checked = true;
         toast(`Added variant: ${name}`);
@@ -570,14 +581,16 @@ function setupVariants(p, isNew) {
         const priceRaw = rowEl.querySelector('[data-f="price"]').value;
         const priceOverride = priceRaw === '' ? null : parseFloat(priceRaw);
         const available = rowEl.querySelector('[data-f="avail"]').checked;
+        const stockRaw = rowEl.querySelector('[data-f="stock"]').value;
+        const stockQty = stockRaw === '' ? null : Math.max(0, parseInt(stockRaw, 10) || 0);
 
         const { error } = await sb.from('product_variants').update({
             name, strain_type: strain, price_override: priceOverride,
-            is_available: available, updated_at: new Date().toISOString(),
+            is_available: available, stock_qty: stockQty, updated_at: new Date().toISOString(),
         }).eq('id', id);
         if (error) return toastError(error.message);
         const v = variantState.variants.find(x => x.id === id);
-        if (v) Object.assign(v, { name, strain_type: strain, price_override: priceOverride, is_available: available });
+        if (v) Object.assign(v, { name, strain_type: strain, price_override: priceOverride, is_available: available, stock_qty: stockQty });
         variantState.editingId = null;
         renderVariantsList();
         toast('Variant updated');
