@@ -96,7 +96,7 @@ function orderCardHTML(o) {
         <div class="order-meta">
           <span>📞 ${escapeHTML(phone || '—')}</span>
           <span>${escapeHTML(o.payment_method || '—')}</span>
-          <span>${itemCount} item${itemCount === 1 ? '' : 's'}</span>
+          <span>${itemCount} item${itemCount === 1 ? '' : 's'}${items[0] ? ': ' + escapeHTML(items[0].display_name || items[0].name || '') + (itemCount > 1 ? '…' : '') : ''}</span>
           ${o.delivery_zone ? `<span>📍 ${escapeHTML(o.delivery_zone)}</span>` : ''}
           ${o.receipt_url ? `<span style="color:var(--green)" title="Receipt uploaded">📎 Receipt</span>` : ''}
         </div>
@@ -325,7 +325,8 @@ function openDetail(order) {
         <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px dashed var(--border)">
           ${thumb}
           <div style="flex:1;min-width:0">
-            <div style="font-weight:600;font-size:13px">${escapeHTML(it.name || '—')}</div>
+            <div style="font-weight:600;font-size:13px">${escapeHTML(it.display_name || it.name || '—')}</div>
+            ${it.variant_name ? `<div style="color:var(--green);font-size:11px;margin-top:1px">↳ ${escapeHTML(it.variant_name)}</div>` : ''}
             <div style="color:var(--text-muted);font-size:12px;margin-top:2px">${escapeHTML(String(qty))} × ${formatCurrency(price)}</div>
           </div>
           <div style="font-family:'JetBrains Mono',monospace;font-size:13px">${formatCurrency(price * qty)}</div>
@@ -535,7 +536,7 @@ function printReceipt(order) {
         ${items.map(it => {
           const qty = it.quantity != null ? it.quantity : (it.qty || 1);
           return `
-          <tr><td>${escapeHTML(it.name || '')} × ${escapeHTML(String(qty))}</td>
+          <tr><td>${escapeHTML(it.display_name || it.name || '')} × ${escapeHTML(String(qty))}</td>
               <td style="text-align:right">${formatCurrency((parseFloat(it.price) || 0) * qty)}</td></tr>
         `;}).join('')}
         <tr><td>Subtotal</td><td style="text-align:right">${formatCurrency(order.subtotal)}</td></tr>
