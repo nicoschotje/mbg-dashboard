@@ -433,6 +433,8 @@ function variantRowHTML(v) {
             <input class="input" data-f="name" value="${escapeHTML(v.name || '')}" placeholder="Variant name" />
             <select class="input" data-f="strain">${strainOptions(v.strain_type)}</select>
             <input class="input" data-f="price" type="number" step="0.01" min="0" value="${v.price_override ?? ''}" placeholder="Price override" />
+            <input class="input" data-f="cost" type="number" step="0.01" min="0" value="${v.cost_override ?? ''}" placeholder="Cost override" />
+            <input class="input" data-f="units" type="number" step="0.01" min="0.01" value="${v.stock_units ?? 1}" placeholder="Units" title="Stock units consumed per item (e.g. 0.5 for a joint)" />
             <input class="input" data-f="stock" type="number" min="0" value="${v.stock_qty ?? ''}" placeholder="Stock (blank = ∞)" />
             <label class="toggle-switch" title="Available"><input type="checkbox" data-f="avail" ${v.is_available ? 'checked' : ''}/><span class="toggle-slider"></span></label>
             <button class="btn btn-sm" data-action="save">Save</button>
@@ -448,7 +450,12 @@ function variantRowHTML(v) {
         <span class="variant-name">${escapeHTML(v.name || '—')}</span>${strainPill(v.strain_type)}
       </div>
       <span class="variant-price">${price}</span>
-      <span class="variant-stock" title="Stock remaining (∞ = untracked)">${v.stock_qty == null ? '∞' : v.stock_qty}</span>
+      <span class="variant-price" style="color:var(--text-muted);font-size:11px" title="Cost override">
+        ${v.cost_override != null ? '₱' + formatCurrency(v.cost_override) + ' cost' : ''}
+      </span>
+      <span class="variant-stock" title="Units consumed per item sold (for stock tracking)">
+        ${v.stock_qty == null ? '∞' : v.stock_qty} <span style="font-size:10px;color:var(--text-muted)">(×${Number(v.stock_units ?? 1)})</span>
+      </span>
       <label class="toggle-switch" title="Available"><input type="checkbox" class="va-avail" ${v.is_available ? 'checked' : ''}/><span class="toggle-slider"></span></label>
       <button class="btn btn-sm btn-danger" data-action="delete" title="Delete variant">✕</button>
     </div>`;
@@ -486,8 +493,16 @@ function variantSectionHTML(parentActive) {
             <input class="input" id="va-price" type="number" step="0.01" min="0" placeholder="Optional" />
           </div>
           <div>
+            <label class="field-label">Cost override</label>
+            <input class="input" id="va-cost" type="number" step="0.01" min="0" placeholder="Optional" />
+          </div>
+          <div>
             <label class="field-label">Stock</label>
             <input class="input" id="va-stock" type="number" min="0" placeholder="∞ (blank)" />
+          </div>
+          <div>
+            <label class="field-label" title="How many stock units this variant uses. 1g = 1, 0.5g joint = 0.5">Units</label>
+            <input class="input" id="va-units" type="number" step="0.01" min="0.01" placeholder="1" value="1" />
           </div>
           <div style="flex:0 0 auto;display:flex;align-items:center;gap:6px;padding-bottom:8px">
             <label class="toggle-switch" title="Available"><input type="checkbox" id="va-avail" checked /><span class="toggle-slider"></span></label>
@@ -551,6 +566,10 @@ function setupVariants(p, isNew) {
         const strain = modalBody.querySelector('#va-strain').value || null;
         const priceRaw = modalBody.querySelector('#va-price').value;
         const priceOverride = priceRaw === '' ? null : parseFloat(priceRaw);
+        const costRaw = modalBody.querySelector('#va-cost').value;
+        const costOverride = costRaw === '' ? null : parseFloat(costRaw);
+        const unitsRaw = modalBody.querySelector('#va-units').value;
+        const stockUnits = unitsRaw === '' ? 1.0 : Math.max(0.01, parseFloat(unitsRaw) || 1.0);
         const available = modalBody.querySelector('#va-avail').checked;
         // Blank stock = untracked (∞). A number = stock-tracked: checkout
         // decrements it and it auto-sells-out at 0.
@@ -560,7 +579,10 @@ function setupVariants(p, isNew) {
 
         const { data, error } = await sb.from('product_variants').insert([{
             parent_product_id: variantState.productId,
-            name, strain_type: strain, price_override: priceOverride,
+            name, strain_type: strain,
+            price_override: priceOverride,
+            cost_override: costOverride,
+            stock_units: stockUnits,
             is_available: available, sort_order: nextOrder, stock_qty: stockQty,
         }]).select().single();
         if (error) return toastError(error.message);
@@ -568,6 +590,8 @@ function setupVariants(p, isNew) {
         renderVariantsList();
         modalBody.querySelector('#va-name').value = '';
         modalBody.querySelector('#va-price').value = '';
+        modalBody.querySelector('#va-cost').value = '';
+        modalBody.querySelector('#va-units').value = '1';
         modalBody.querySelector('#va-stock').value = '';
         modalBody.querySelector('#va-strain').value = '';
         modalBody.querySelector('#va-avail').checked = true;
@@ -580,17 +604,24 @@ function setupVariants(p, isNew) {
         const strain = rowEl.querySelector('[data-f="strain"]').value || null;
         const priceRaw = rowEl.querySelector('[data-f="price"]').value;
         const priceOverride = priceRaw === '' ? null : parseFloat(priceRaw);
+        const costRaw = rowEl.querySelector('[data-f="cost"]').value;
+        const costOverride = costRaw === '' ? null : parseFloat(costRaw);
+        const unitsRaw = rowEl.querySelector('[data-f="units"]').value;
+        const stockUnits = unitsRaw === '' ? 1.0 : Math.max(0.01, parseFloat(unitsRaw) || 1.0);
         const available = rowEl.querySelector('[data-f="avail"]').checked;
         const stockRaw = rowEl.querySelector('[data-f="stock"]').value;
         const stockQty = stockRaw === '' ? null : Math.max(0, parseInt(stockRaw, 10) || 0);
 
         const { error } = await sb.from('product_variants').update({
-            name, strain_type: strain, price_override: priceOverride,
+            name, strain_type: strain,
+            price_override: priceOverride,
+            cost_override: costOverride,
+            stock_units: stockUnits,
             is_available: available, stock_qty: stockQty, updated_at: new Date().toISOString(),
         }).eq('id', id);
         if (error) return toastError(error.message);
         const v = variantState.variants.find(x => x.id === id);
-        if (v) Object.assign(v, { name, strain_type: strain, price_override: priceOverride, is_available: available, stock_qty: stockQty });
+        if (v) Object.assign(v, { name, strain_type: strain, price_override: priceOverride, cost_override: costOverride, stock_units: stockUnits, is_available: available, stock_qty: stockQty });
         variantState.editingId = null;
         renderVariantsList();
         toast('Variant updated');
