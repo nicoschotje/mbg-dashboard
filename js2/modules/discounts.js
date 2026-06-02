@@ -177,14 +177,10 @@ function openForm(c) {
           <option value="free_delivery"  ${data.discount_type === 'free_delivery' ? 'selected' : ''}>Free delivery</option>
         </select>
       </div>
-      <div style="flex:1 1 120px">
-        <label class="field-label">Value</label>
-        <input class="input" id="f-val" type="number" min="0" step="0.01" value="${data.discount_value ?? 0}"/>
-      </div>
-      <div style="flex:1 1 140px">
-        <label class="field-label">% cap (₱)</label>
-        <input class="input" id="f-cap" type="number" min="0" step="0.01"
-          value="${data.max_discount_cap ?? ''}" placeholder="optional"/>
+      <div style="flex:1 1 160px" id="f-val-wrap">
+        <label class="field-label" id="f-val-label">Percent (%)</label>
+        <input class="input" id="f-val" type="number" min="0" step="0.01" value="${data.discount_value ?? ''}" placeholder="10"/>
+        <small id="f-val-hint" style="display:block;margin-top:4px;color:var(--text-muted);font-size:11px">e.g. 10 = 10% off</small>
       </div>
     </div>
 
@@ -279,6 +275,31 @@ function openForm(c) {
     modalBody.querySelector('#f-code').value = generateCode();
   });
 
+  // Value field adapts to the selected type (percent / fixed / free delivery)
+  const syncTypeUI = () => {
+    const type  = modalBody.querySelector('#f-type').value;
+    const wrap  = modalBody.querySelector('#f-val-wrap');
+    const label = modalBody.querySelector('#f-val-label');
+    const hint  = modalBody.querySelector('#f-val-hint');
+    const val   = modalBody.querySelector('#f-val');
+    if (type === 'free_delivery') {
+      wrap.style.display = 'none';        // no number needed for free delivery
+      return;
+    }
+    wrap.style.display = '';
+    if (type === 'fixed') {
+      label.textContent = 'Amount (₱)';
+      hint.textContent  = 'e.g. 100 = ₱100 off';
+      val.placeholder   = '100';
+    } else {
+      label.textContent = 'Percent (%)';
+      hint.textContent  = 'e.g. 10 = 10% off';
+      val.placeholder   = '10';
+    }
+  };
+  syncTypeUI();
+  modalBody.querySelector('#f-type').addEventListener('change', syncTypeUI);
+
   // Applies-to pills toggle
   let currentAppliesTo = data.applicable_to || 'all';
   modalBody.querySelectorAll('.applies-pill').forEach(pill => {
@@ -312,8 +333,17 @@ async function save(existing, applicableTo) {
   const sb = getSB();
   const code = modalBody.querySelector('#f-code').value.trim().toUpperCase();
   if (!code) return toastWarn('Code is required.');
-  const value = parseFloat(modalBody.querySelector('#f-val').value);
-  if (Number.isNaN(value) || value < 0) return toastWarn('Value must be a non-negative number.');
+  const type = modalBody.querySelector('#f-type').value;
+  let value = parseFloat(modalBody.querySelector('#f-val').value);
+  if (type === 'free_delivery') {
+    value = 0;
+  } else if (Number.isNaN(value) || value <= 0) {
+    return toastWarn(type === 'fixed'
+      ? 'Enter the peso amount off, e.g. 100.'
+      : 'Enter the percent off, e.g. 10 for 10%.');
+  } else if (type === 'percent' && value > 100) {
+    return toastWarn('Percent can\u2019t be more than 100.');
+  }
 
   let applicableIds = [];
   if (applicableTo === 'category') {
@@ -325,12 +355,11 @@ async function save(existing, applicableTo) {
   const startRaw = modalBody.querySelector('#f-start').value;
   const expRaw   = modalBody.querySelector('#f-exp').value;
   const max      = modalBody.querySelector('#f-max').value;
-  const cap      = modalBody.querySelector('#f-cap').value;
 
   const payload = {
     promo_code:              code,
     description:             modalBody.querySelector('#f-desc').value.trim() || null,
-    discount_type:           modalBody.querySelector('#f-type').value,
+    discount_type:           type,
     discount_value:          value,
     min_order_amount:        parseFloat(modalBody.querySelector('#f-min').value) || 0,
     max_uses:                max === '' ? null : parseInt(max, 10),
@@ -338,7 +367,7 @@ async function save(existing, applicableTo) {
     expires_at:              expRaw  ? new Date(expRaw).toISOString()   : null,
     is_active:               modalBody.querySelector('#f-active').checked,
     single_use_per_customer: modalBody.querySelector('#f-single').checked,
-    max_discount_cap:        cap === '' ? null : parseFloat(cap),
+    max_discount_cap:        null,
     applicable_to:           applicableTo || 'all',
     applicable_ids:          applicableIds,
   };
