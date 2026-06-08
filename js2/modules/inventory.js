@@ -37,7 +37,9 @@ async function loadRestocks() {
     .select('*, products(name, stock_qty)')
     .is('notified_at', null)
     .order('created_at', { ascending: true });
-  if (error) return;
+  // Don't silently swallow: a failed query here used to leave the restock list
+  // mysteriously empty. Log it (non-blocking — the inventory grid still renders).
+  if (error) { console.warn('[inventory] restock_notifications load failed:', error.message); return; }
   state.pendingRestocks = data || [];
 }
 
