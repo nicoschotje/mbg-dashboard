@@ -93,9 +93,10 @@ Core: `supabase.js` (client + `x-admin-secret` header), `auth.js` (PIN/session/i
 
 ## P0-1 — Factory-default credentials are live, and there is a hardcoded admin backdoor
 
-**Type:** security · **Status:** 🔶 in progress — owner provided new PINs; new hashes +
-server-side login applied/queued; final backdoor removal (Step C) runs after this PR
-is merged & deployed. See “Remediation status” at the bottom.
+**Type:** security · **Status:** ✅ RESOLVED on live 2026-06-08 (PR #20 + Step C). New
+PINs set, login verifies server-side, and the `admin_config` master-key branch is removed
+from `is_admin()`. Verified: `123456`/`1234` rejected, `748306`/`1402` work. See
+“Remediation status” below.
 
 This is three overlapping problems that together make `123456` a universal master key.
 
@@ -461,12 +462,48 @@ removed once the new login code is live — otherwise the current `123456` login
   (`verify_owner_pin` / `verify_sales_pin`) with **no** `123456`/`1234` fallback. Verified
   server-side: the new owner & sales PINs are accepted and the old defaults are rejected.
   **Test it on the deploy preview** before merging.
-- **Step C — after merge.** Once the new code is live, redefine `is_admin()` to drop the
-  `admin_config` branch (the stale `sha256('123456')` master key). SQL is ready in
-  `supabase/remediation/audit-2026-06-08.sql`. This permanently closes the backdoor (P0-1)
-  **and** makes the Settings PIN-change fully effective (P0-2), since admin then keys only
-  on `OWNER_PIN_HASH`, which Settings updates.
+- **Step C — DONE (live, 2026-06-08).** PR #20 was merged & deployed; owner confirmed
+  `748306` logs in and `123456` is rejected on live. `is_admin()` redefined to drop the
+  `admin_config` branch (migrations `harden_is_admin_drop_admin_config_backdoor` /
+  `harden_is_admin_clean_comment`). Verified in SQL: `is_admin()` no longer reads
+  `admin_config`/`admin_secret_hash`, defaults closed (false with no headers), and
+  `verify_owner_pin`/`verify_sales_pin` accept `748306`/`1402` and reject `123456`/`1234`.
+  The backdoor is closed **and** Settings PIN changes now fully rotate admin (P0-2),
+  since admin keys only on `OWNER_PIN_HASH`. `admin_config.admin_secret_hash` is now
+  unread (dead value); it can be nulled at leisure but is harmless.
 
-**So:** after you merge this PR and tell me it’s deployed, I run Step C and `123456` is
-dead everywhere. Until then `123456` still works on the *live* site (unchanged), so keep
-the URL private. (The new PINs already work on the **preview**.)
+**So:** P0-1 and P0-2 are closed on live. `123456`/`1234` no longer work anywhere
+(UI login *or* direct API). Owner should still do the two follow-ups in the changelog.
+
+---
+
+## Continuation log — 2026-06-08 (DB security remediation)
+
+Runbook Steps 1, 2/C and 5 are done and verified on live; Steps 3 & 4 are gated on
+external dependencies.
+
+| Runbook step | What was exposed | Now | Verified how |
+|---|---|---|---|
+| **1 — CRM lockdown** | 8 `mbg_*` CRM tables + `discount_codes` readable by the public anon key | SELECT now `is_admin()`-only | `pg_policies` sweep: no customer/business table has a `USING(true)` read; only catalog/CMS/`store_settings` stay public |
+| **2 / C — master-key backdoor** | `is_admin()` accepted `x-admin-secret: 123456` via `admin_config`; client also fell back to `123456`/`1234` | server-side `verify_owner_pin`/`verify_sales_pin` login (PR #20) + `is_admin()` no longer reads `admin_config` | live SQL: `is_admin()` defaults closed, `748306`/`1402` ✓, `123456`/`1234` ✗; owner confirmed on live UI |
+| **5 — tier ladder** | 3 disagreeing tier ladders | all dashboard screens read one source (`dashboard_settings.TIER_CONFIG`); owner kept ₱5k/10k/15k/25k/50k | code reads `tierFromConfig()`; live `TIER_CONFIG` value unchanged |
+| **3 — Telegram token columns** | `store_settings.telegram_bot_token`/`chat_id` readable by anon | ⏸ **pending** | waits on storefront PR #26 live + owner rotating the bot token |
+| **4 — anon-callable functions** | 43 `SECURITY DEFINER` fns executable by anon (incl. `get_totp_secret`) | ⏸ **pending** | waits on `STOREFRONT-DB-DEPENDENCIES.md` (not yet in repo) before any `REVOKE` |
+
+### Plain-English owner changelog (continuation)
+- **Your customer list is now private.** Previously anyone with the public web key could
+  download your CRM (names, phones, spend). That’s now locked to the owner login.
+- **The `123456` master key is dead.** The dashboard now checks your PIN on the server,
+  and the hidden database master-key was removed. Only `748306` (owner) / `1402` (sales)
+  work, on any device. Changing your PIN in Settings now actually sticks.
+- **Two things still for you to do:**
+  1. **Rotate the Telegram bot token** in @BotFather and put the new token only in the
+     edge-function secret (not in the settings table). Tell me when done + when the
+     storefront update (PR #26) is live, and I’ll lock the token columns away from the
+     public key (Step 3).
+  2. **Change your owner PIN once more in Settings** — `748306` was typed into this chat,
+     so pick a fresh 6-digit code. It will now take effect immediately (the old bug that
+     made PIN changes ineffective is fixed).
+- **Still queued:** locking down 43 database functions (Step 4) — I’ll do that read-only
+  classification now and apply the safe `REVOKE`s once the storefront dependency list
+  lands, so we don’t break shop login/checkout.
