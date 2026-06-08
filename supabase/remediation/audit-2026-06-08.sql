@@ -1,0 +1,118 @@
+-- ============================================================================
+-- MBG Dashboard — security remediation SQL (audit 2026-06-08)
+--
+-- ⚠️  DO NOT run this blindly, and DO NOT drop it into supabase/migrations/.
+--     It is intentionally OUTSIDE the migrations folder so `supabase db push`
+--     will not auto-apply it. Each block touches LIVE auth or data that the
+--     storefront may share. Read the comment above each block, run the
+--     verification query first, then apply deliberately.
+--
+-- Project: ihnnipynpdtcbdfbpemq
+-- See DASHBOARD-AUDIT.md (P0-1, P0-2, P0-3, P0-4) for full context.
+-- ============================================================================
+
+
+-- ----------------------------------------------------------------------------
+-- P0-1 / P0-2 — Rotate the owner/sales credentials AND kill the 123456 backdoor.
+--
+-- Today `is_admin()` accepts x-admin-secret '123456' because
+-- admin_config.admin_secret_hash = sha256('123456'). Changing the owner PIN in
+-- Settings only updates OWNER_PIN_HASH, NOT admin_config — so 123456 keeps
+-- working. All three rows below must be updated together.
+--
+-- Compute the hashes with the SAME function the client uses (lowercase hex
+-- sha256 of the raw digits), e.g. in a browser console:
+--   crypto.subtle.digest('SHA-256', new TextEncoder().encode('NEWPIN'))
+--     .then(b => console.log([...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')))
+-- or in psql with pgcrypto:  SELECT encode(digest('NEWPIN','sha256'),'hex');
+--
+-- Replace the placeholders, then run inside a transaction.
+-- ----------------------------------------------------------------------------
+-- BEGIN;
+--   UPDATE public.dashboard_settings SET value = '<NEW_OWNER_PIN_SHA256>', updated_at = now()
+--     WHERE key = 'OWNER_PIN_HASH';
+--   UPDATE public.dashboard_settings SET value = '<NEW_SALES_PIN_SHA256>', updated_at = now()
+--     WHERE key = 'SALES_PIN_HASH';
+--   -- This is the line that actually closes the backdoor:
+--   UPDATE public.admin_config SET admin_secret_hash = '<NEW_OWNER_PIN_SHA256>', updated_at = now()
+--     WHERE id = 1;
+-- COMMIT;
+--
+-- After this runs you MUST also deploy the auth.js change (server-side
+-- verify_owner_pin + no default fallback) — otherwise the client still seeds
+-- 123456/1234 on a fresh device. See DASHBOARD-AUDIT.md "Action required".
+
+
+-- ----------------------------------------------------------------------------
+-- P0-3b — Stop the public anon key from reading the customer CRM.
+--
+-- mbg_clients (23 rows) and mbg_client_intelligence (208 rows) currently allow
+-- anon SELECT with USING (true). Restrict to is_admin(). The dashboard reads
+-- these while logged in as owner (is_admin() = true via the x-admin-secret
+-- header), so it keeps working. The storefront almost certainly does NOT read
+-- them — VERIFY that first.
+--
+-- Verify nothing anonymous depends on these (run as the anon role / from the
+-- storefront) BEFORE applying. Then:
+-- ----------------------------------------------------------------------------
+-- ALTER POLICY "Allow anon read mbg_clients"
+--   ON public.mbg_clients USING (is_admin());
+-- ALTER POLICY "Allow anon read mbg_client_intelligence"
+--   ON public.mbg_client_intelligence USING (is_admin());
+
+
+-- ----------------------------------------------------------------------------
+-- P0-3a — Telegram bot token is readable by the public anon key.
+--
+-- store_settings has SELECT USING (true) for `public`, and the row contains
+-- telegram_bot_token + telegram_chat_id. There is NO clean one-liner here:
+-- every dashboard/storefront request is the `anon` DB role (owner is only
+-- distinguished by is_admin() at the RLS row level, which cannot hide a
+-- COLUMN). So column-level REVOKE would break the storefront too.
+--
+-- Recommended (requires a small storefront change, coordinate first):
+--   1. Create a public view exposing ONLY the branding/payment-display columns
+--      (no token), and point the storefront + dashboard pre-login read at it:
+--
+--      CREATE VIEW public.store_settings_public AS
+--        SELECT id, store_name, store_tagline, store_phone, store_email,
+--               store_address, store_logo_url, banner_url, theme_color,
+--               operating_hours, is_open, store_online, delivery_fee,
+--               free_delivery_min, free_delivery_enabled, min_order_amount,
+--               delivery_rate_multiplier,
+--               gcash_enabled, maya_enabled, crypto_enabled, crypto_usdt_network
+--               -- (NO telegram_bot_token, NO telegram_chat_id, NO raw account #s you want private)
+--          FROM public.store_settings;
+--      GRANT SELECT ON public.store_settings_public TO anon, authenticated;
+--
+--   2. Keep base-table SELECT for is_admin() only:
+--      ALTER POLICY settings_public_read ON public.store_settings USING (is_admin());
+--      -- (and drop/!replace the duplicate allow_read_store_settings policy)
+--
+--   3. Best: move telegram_bot_token out of the DB entirely into the
+--      notify-customer / telegram-* Edge Function secrets (it doesn't need to
+--      live in a client-readable table at all).
+--
+-- This is left as a documented recommendation, NOT applied, because it needs
+-- the storefront updated in lockstep.
+
+
+-- ----------------------------------------------------------------------------
+-- P0-4 — auth_audit_log accepts anonymous inserts (WORM table can be spammed).
+--
+-- Policy audit_anon_insert is INSERT WITH CHECK (true) for anon. Audit writes
+-- should go only through SECURITY DEFINER RPCs. Tightening this could break a
+-- login/verify flow that inserts as anon — verify the verify_* RPCs are
+-- SECURITY DEFINER (they are) and do the inserts themselves, then:
+--   -- DROP POLICY audit_anon_insert ON public.auth_audit_log;
+-- Leave SELECT denied to anon (it already is). Documented, not applied.
+
+
+-- ----------------------------------------------------------------------------
+-- P0-4 (advisors) — function_search_path_mutable on:
+--   public.sync_order_status_columns, public.increment_discount_uses
+-- Add a fixed search_path to each (defensive against search_path attacks):
+--   ALTER FUNCTION public.sync_order_status_columns() SET search_path = public, pg_temp;
+--   ALTER FUNCTION public.increment_discount_uses(uuid) SET search_path = public, pg_temp;
+-- Safe to apply.
+-- ----------------------------------------------------------------------------

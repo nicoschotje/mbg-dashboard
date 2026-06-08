@@ -220,9 +220,11 @@ called out for the DBA/owner rather than “fixed” from the dashboard repo.
 
 ## P0-5 — Remediation SQL (additive, NOT auto-applied)
 
-Ready-to-run SQL for P0-1/P0-3 is provided as commented migration files under
-`supabase/migrations/` (prefixed `AUDIT_`) so they can be reviewed and applied
-deliberately. They are **not** run against production by this audit.
+Ready-to-run, heavily-commented SQL for P0-1/P0-2/P0-3/P0-4 lives in
+**`supabase/remediation/audit-2026-06-08.sql`** — deliberately placed *outside*
+`supabase/migrations/` so `supabase db push` won’t auto-apply it. Each block has a
+verification step and a caution note. They are **not** run against production by
+this audit.
 
 ---
 
