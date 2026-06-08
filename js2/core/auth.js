@@ -1,21 +1,20 @@
 // Auth / PIN / session / idle timer (blueprint §8)
 //
-// - Owner PIN: 6-digit, hashed client-side, stored in dashboard_settings/OWNER_PIN_HASH
-// - Sales PIN: 4-digit, hashed client-side, stored in dashboard_settings/SALES_PIN_HASH
-// - Both fall back to localStorage (mg_owner_hash / mg_sales_hash) per blueprint
-// - Session in sessionStorage, 8h absolute expiry, 30min idle lock
+// PIN verification is done SERVER-SIDE via SECURITY DEFINER RPCs:
+//   - Owner (6-digit): verify_owner_pin(p_pin) — checks dashboard_settings.OWNER_PIN_HASH
+//   - Sales (4-digit): verify_sales_pin(p_pin) — checks dashboard_settings.SALES_PIN_HASH
+// The PIN hashes are hidden from the anon key by RLS, so the client can NOT read
+// them and must ask the server. This deliberately removes the old client-side
+// "default PIN" fallback (123456 / 1234), which let those factory defaults log
+// in on any fresh device. See DASHBOARD-AUDIT.md P0-1.
+//
+// Session in sessionStorage, 8h absolute expiry, 30min idle lock.
 
-import { hashPIN } from './utils.js';
 import { createSB, getSB } from './supabase.js';
 
 const SESSION_KEY = 'mg_sess';
-const OWNER_LS_KEY = 'mg_owner_hash';
-const SALES_LS_KEY = 'mg_sales_hash';
 const ABS_EXPIRY_MS = 8 * 60 * 60 * 1000;
 const IDLE_LOCK_MS  = 30 * 60 * 1000;
-
-const DEFAULT_OWNER_PIN = '123456';
-const DEFAULT_SALES_PIN = '1234';
 
 // In-memory lockout (blueprint §8.1: 5 fails -> 30s cooldown)
 const lockout = { fails: 0, lockedUntil: 0 };
@@ -49,42 +48,14 @@ export function clearSession() {
   if (_idleTimer) clearTimeout(_idleTimer);
 }
 
-// Pull stored hashes — DB first, localStorage fallback
-async function loadStoredHashes() {
-  const result = { owner: null, sales: null };
-  try {
-    const sb = getSB();
-    const { data, error } = await sb
-      .from('dashboard_settings')
-      .select('key,value')
-      .in('key', ['OWNER_PIN_HASH', 'SALES_PIN_HASH']);
-    if (!error && Array.isArray(data)) {
-      for (const row of data) {
-        if (row.key === 'OWNER_PIN_HASH') result.owner = row.value;
-        if (row.key === 'SALES_PIN_HASH') result.sales = row.value;
-      }
-    }
-  } catch { /* offline / no creds — fall through to LS */ }
-
-  if (!result.owner) result.owner = localStorage.getItem(OWNER_LS_KEY);
-  if (!result.sales) result.sales = localStorage.getItem(SALES_LS_KEY);
-
-  // First-run: seed from defaults (and persist to LS so re-launch matches)
-  if (!result.owner) {
-    result.owner = await hashPIN(DEFAULT_OWNER_PIN);
-    localStorage.setItem(OWNER_LS_KEY, result.owner);
-  }
-  if (!result.sales) {
-    result.sales = await hashPIN(DEFAULT_SALES_PIN);
-    localStorage.setItem(SALES_LS_KEY, result.sales);
-  }
-  return result;
-}
-
 /**
  * Try a PIN. Returns { ok, role } on success or { ok:false, reason }.
- * On success a Supabase client is created with the captured admin secret
- * and a session is persisted in sessionStorage.
+ *
+ * Verification is server-side: a 6-digit PIN is checked with verify_owner_pin,
+ * a 4-digit PIN with verify_sales_pin. There is intentionally NO default-PIN
+ * fallback. On owner success a Supabase client is created with the PIN as the
+ * x-admin-secret (sha256(PIN) === OWNER_PIN_HASH, so is_admin() passes for the
+ * whole session); sales gets no admin secret.
  */
 export async function tryLogin(pin, adminSecret) {
   if (Date.now() < lockout.lockedUntil) {
@@ -95,18 +66,30 @@ export async function tryLogin(pin, adminSecret) {
     return { ok: false, reason: 'PIN must be 4 or 6 digits.' };
   }
 
-  // Need a client to read stored hashes
-  if (!window.__sb_temp_for_hash_read) {
-    createSB(adminSecret || '');
-    window.__sb_temp_for_hash_read = true;
-  }
-
-  const stored = await loadStoredHashes();
-  const candidate = await hashPIN(pin);
+  // The verify RPCs are SECURITY DEFINER + anon-executable, so an anon client
+  // (no admin secret) is enough to verify the PIN.
+  createSB(adminSecret || '');
+  const sb = getSB();
 
   let role = null;
-  if (candidate === stored.owner && pin.length === 6) role = 'owner';
-  else if (candidate === stored.sales && pin.length === 4) role = 'sales';
+  try {
+    if (pin.length === 6) {
+      const { data, error } = await sb.rpc('verify_owner_pin', { p_pin: pin });
+      if (error) throw error;
+      if (data?.success) {
+        role = 'owner';
+      } else if (data?.totp_required) {
+        return { ok: false, reason: '2FA is enabled for this account — not supported in this build.' };
+      }
+    } else {
+      // 4-digit → sales
+      const { data, error } = await sb.rpc('verify_sales_pin', { p_pin: pin });
+      if (error) throw error;
+      if (data?.success) role = 'sales';
+    }
+  } catch (e) {
+    return { ok: false, reason: 'Login error. Check connection.' };
+  }
 
   if (!role) {
     lockout.fails += 1;
@@ -119,12 +102,10 @@ export async function tryLogin(pin, adminSecret) {
   }
 
   lockout.fails = 0;
-  // For owner role: if no explicit admin secret, use the PIN itself so that
-  // sha256(PIN) matches OWNER_PIN_HASH in is_admin() — enables all DB writes
-  // without the user having to fill in a separate "Admin secret" field.
-  const effectiveSecret = adminSecret || (role === 'owner' ? pin : '');
 
-  // Reset client so admin secret header is in place for the real session
+  // Owner: the PIN doubles as the admin secret so every owner write passes
+  // is_admin(). Sales role carries no admin secret (cannot perform owner writes).
+  const effectiveSecret = role === 'owner' ? (adminSecret || pin) : '';
   createSB(effectiveSecret);
 
   const now = Date.now();

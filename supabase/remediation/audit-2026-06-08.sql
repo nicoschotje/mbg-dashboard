@@ -13,34 +13,59 @@
 
 
 -- ----------------------------------------------------------------------------
--- P0-1 / P0-2 — Rotate the owner/sales credentials AND kill the 123456 backdoor.
+-- P0-1 / P0-2 — STATUS: partially applied 2026-06-08.
 --
--- Today `is_admin()` accepts x-admin-secret '123456' because
--- admin_config.admin_secret_hash = sha256('123456'). Changing the owner PIN in
--- Settings only updates OWNER_PIN_HASH, NOT admin_config — so 123456 keeps
--- working. All three rows below must be updated together.
+-- DONE (safe, no live disruption — admin_config left intact so the old live
+-- code's 123456 login keeps working until the new auth.js ships):
+--   * dashboard_settings.OWNER_PIN_HASH  -> sha256('<new owner PIN>')
+--   * dashboard_settings.SALES_PIN_HASH  -> sha256('<new sales PIN>')
+--   * new RPC public.verify_sales_pin(...) (see supabase/migrations/)
+--   * js2/core/auth.js now verifies server-side via verify_owner_pin /
+--     verify_sales_pin and no longer falls back to 123456 / 1234.
 --
--- Compute the hashes with the SAME function the client uses (lowercase hex
--- sha256 of the raw digits), e.g. in a browser console:
---   crypto.subtle.digest('SHA-256', new TextEncoder().encode('NEWPIN'))
---     .then(b => console.log([...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')))
--- or in psql with pgcrypto:  SELECT encode(digest('NEWPIN','sha256'),'hex');
+-- STEP C — RUN THIS ONLY AFTER the new auth.js is merged to main and live.
+-- It removes the admin_config branch from is_admin(): that branch pinned a
+-- stale sha256('123456') master key that survived every PIN change (P0-1) and
+-- made Settings PIN changes ineffective (P0-2). After this, is_admin() trusts
+-- only (a) a valid admin_sessions token or (b) x-admin-secret matching the
+-- CURRENT OWNER_PIN_HASH — so changing the owner PIN fully rotates admin.
 --
--- Replace the placeholders, then run inside a transaction.
+-- ⚠️  Running this BEFORE the new code is live will break the live owner's
+--     writes (the old code logs in with 123456 and relies on admin_config).
 -- ----------------------------------------------------------------------------
--- BEGIN;
---   UPDATE public.dashboard_settings SET value = '<NEW_OWNER_PIN_SHA256>', updated_at = now()
---     WHERE key = 'OWNER_PIN_HASH';
---   UPDATE public.dashboard_settings SET value = '<NEW_SALES_PIN_SHA256>', updated_at = now()
---     WHERE key = 'SALES_PIN_HASH';
---   -- This is the line that actually closes the backdoor:
---   UPDATE public.admin_config SET admin_secret_hash = '<NEW_OWNER_PIN_SHA256>', updated_at = now()
---     WHERE id = 1;
--- COMMIT;
+-- CREATE OR REPLACE FUNCTION public.is_admin()
+--  RETURNS boolean
+--  LANGUAGE plpgsql
+--  STABLE SECURITY DEFINER
+--  SET search_path TO 'public', 'extensions', 'pg_temp'
+-- AS $function$
+-- DECLARE
+--   v_secret text; v_token text; v_hash text; v_stored text; v_token_hash text;
+-- BEGIN
+--   -- 1) admin session token (issued by verify_owner_pin)
+--   BEGIN
+--     v_token := current_setting('request.headers', true)::json->>'x-admin-token';
+--   EXCEPTION WHEN OTHERS THEN v_token := NULL; END;
+--   IF v_token IS NOT NULL AND length(v_token) >= 32 THEN
+--     v_token_hash := encode(digest(v_token, 'sha256'), 'hex');
+--     PERFORM 1 FROM public.admin_sessions
+--       WHERE token_hash = v_token_hash AND is_valid = true AND expires_at > now() LIMIT 1;
+--     IF FOUND THEN RETURN true; END IF;
+--   END IF;
+--   -- 2) x-admin-secret must equal the CURRENT owner PIN hash (no admin_config!)
+--   BEGIN
+--     v_secret := current_setting('request.headers', true)::json->>'x-admin-secret';
+--   EXCEPTION WHEN OTHERS THEN RETURN false; END;
+--   IF v_secret IS NULL OR v_secret = '' THEN RETURN false; END IF;
+--   v_hash := encode(digest(v_secret, 'sha256'), 'hex');
+--   SELECT value INTO v_stored FROM public.dashboard_settings WHERE key = 'OWNER_PIN_HASH' LIMIT 1;
+--   IF v_stored IS NOT NULL AND v_stored = v_hash THEN RETURN true; END IF;
+--   RETURN false;
+-- END;
+-- $function$;
 --
--- After this runs you MUST also deploy the auth.js change (server-side
--- verify_owner_pin + no default fallback) — otherwise the client still seeds
--- 123456/1234 on a fresh device. See DASHBOARD-AUDIT.md "Action required".
+-- Optional belt-and-suspenders (also kills the value, not just the code path):
+--   -- UPDATE public.admin_config SET admin_secret_hash = NULL, updated_at = now() WHERE id = 1;
 
 
 -- ----------------------------------------------------------------------------

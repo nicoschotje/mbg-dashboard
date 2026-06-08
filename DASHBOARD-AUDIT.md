@@ -26,12 +26,12 @@ against the production database via the Supabase MCP.
    **This is the most serious problem found.** See P0-1 below.
 2. **The staff (sales) code is still `1234`** — also the factory default. Anyone
    who guesses it gets the sales view. See P0-1.
-3. **Changing your code in Settings does *not* fully fix this today** — because of
-   a second hidden “master key” stored in the database, `123456` keeps working
-   even after you change your PIN. Fixing it properly needs one small database
-   change in addition to picking a new code. I’ve written exactly what to do and
-   will do it for you once you tell me the new 6-digit code you want (see
-   “Action required from you” at the bottom).
+3. **This is being fixed now.** You gave me your new codes, so I’ve set them up and
+   rewritten the login so the old defaults no longer work. There’s a safe 3-step
+   changeover (see “Remediation status” below) because the dashboard shares one
+   database with your shop — the last step, which kills `123456` for good, runs
+   right after this update goes live so your current login doesn’t break in the
+   meantime. **Your new codes already work on the test preview link.**
 4. **Your Telegram bot token and your customer list are technically readable by
    the public.** Nobody is necessarily abusing this, but it should be locked
    down. See P0-3.
@@ -93,7 +93,9 @@ Core: `supabase.js` (client + `x-admin-secret` header), `auth.js` (PIN/session/i
 
 ## P0-1 — Factory-default credentials are live, and there is a hardcoded admin backdoor
 
-**Type:** security · **Status:** 🔶 needs owner decision (touches live auth — lockout risk)
+**Type:** security · **Status:** 🔶 in progress — owner provided new PINs; new hashes +
+server-side login applied/queued; final backdoor removal (Step C) runs after this PR
+is merged & deployed. See “Remediation status” at the bottom.
 
 This is three overlapping problems that together make `123456` a universal master key.
 
@@ -427,16 +429,25 @@ assumptions in the brief:
 
 ---
 
-## Action required from you (owner) to fully close P0-1/P0-2
+## Remediation status — P0-1 / P0-2 (cutover in progress)
 
-To kill the `123456` master key without locking yourself out, I need **two numbers**:
-1. a **new 6-digit owner PIN**, and
-2. a **new 4-digit sales PIN**.
+The owner supplied new PINs, so the fix is being applied as a safe 3-step cutover
+(the dashboard and the live storefront share one DB, so the backdoor can only be
+removed once the new login code is live — otherwise the current `123456` login breaks):
 
-Once you give me those, I will (in one commit + one reviewed DB change):
-- update `OWNER_PIN_HASH`, `SALES_PIN_HASH` **and** `admin_config.admin_secret_hash`
-  to the new values (closing the backdoor), and
-- switch `auth.js` to verify the owner PIN server-side via `verify_owner_pin` and drop
-  the `123456`/`1234` fallback.
+- **Step A — DONE (no live disruption).** `OWNER_PIN_HASH` and `SALES_PIN_HASH` rotated
+  to the new PINs; `verify_sales_pin` RPC added. `admin_config` left **untouched** so the
+  current live code keeps logging in with `123456` until the new code ships.
+- **Step B — in this PR.** `js2/core/auth.js` rewritten to verify server-side
+  (`verify_owner_pin` / `verify_sales_pin`) with **no** `123456`/`1234` fallback. Verified
+  server-side: the new owner & sales PINs are accepted and the old defaults are rejected.
+  **Test it on the deploy preview** before merging.
+- **Step C — after merge.** Once the new code is live, redefine `is_admin()` to drop the
+  `admin_config` branch (the stale `sha256('123456')` master key). SQL is ready in
+  `supabase/remediation/audit-2026-06-08.sql`. This permanently closes the backdoor (P0-1)
+  **and** makes the Settings PIN-change fully effective (P0-2), since admin then keys only
+  on `OWNER_PIN_HASH`, which Settings updates.
 
-Until then, `123456` keeps working — so please treat the dashboard URL as sensitive.
+**So:** after you merge this PR and tell me it’s deployed, I run Step C and `123456` is
+dead everywhere. Until then `123456` still works on the *live* site (unchanged), so keep
+the URL private. (The new PINs already work on the **preview**.)
