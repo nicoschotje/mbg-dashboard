@@ -8,7 +8,7 @@ import { AppState } from '../core/state.js';
 import { toast, toastError } from '../core/toast.js';
 import {
   formatCurrency, formatRelative, formatDate, escapeHTML,
-  calcTier, TIER_NAMES,
+  tierFromConfig, TIER_NAMES,
 } from '../core/utils.js';
 
 let mounted = false;
@@ -19,6 +19,7 @@ let modalBody = null;
 
 const state = {
   customers: [],   // [{ phone, name, orders, spent, lastOrder, tierRow }]
+  tierConfig: [],  // dashboard_settings.TIER_CONFIG — single source of truth for thresholds
   search: '',
   sortBy: 'spent', // spent | orders | last
 };
@@ -64,11 +65,19 @@ async function loadAll() {
     ...c,
     tierRow: AppState.tiers[c.phone] || null,
   }));
+
+  // Tier ladder — read the owner-configured thresholds (Settings → Tier
+  // Configuration) so this tab agrees with Settings and the CRM instead of a
+  // hardcoded ladder. TIER_CONFIG is a non-sensitive key (readable here).
+  const { data: tcRow } = await sb
+    .from('dashboard_settings').select('value').eq('key', 'TIER_CONFIG').maybeSingle();
+  try { state.tierConfig = tcRow?.value ? JSON.parse(tcRow.value) : []; }
+  catch { state.tierConfig = []; }
 }
 
 function tierFor(c) {
   if (c.tierRow) return c.tierRow.tier;
-  return calcTier(c.spent);
+  return tierFromConfig(c.spent, state.tierConfig);
 }
 
 function sorted() {
@@ -204,7 +213,7 @@ async function openDetail(c) {
 async function saveCustomer(c, payload) {
   const sb = getSB();
   const tags = payload.tagsCSV.split(',').map(s => s.trim()).filter(Boolean);
-  const tier = payload.override ? payload.manualTier : calcTier(c.spent);
+  const tier = payload.override ? payload.manualTier : tierFromConfig(c.spent, state.tierConfig);
 
   const row = {
     customer_phone: c.phone,

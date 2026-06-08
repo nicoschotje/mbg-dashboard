@@ -340,7 +340,16 @@ key is ever rotated, **both** spots must change. The stale comment could be tidi
 
 ## P3-3 — Three different tier-threshold definitions
 
-**Type:** coded-wrong / data-consistency · **Status:** 📝 documented (business decision needed)
+**Type:** coded-wrong / data-consistency · **Status:** ✅ resolved — single source of truth.
+Owner confirmed the authoritative ladder is their live Settings value
+**₱5k/10k/15k/25k/50k**. `customers.js` now derives the tier from
+`dashboard_settings.TIER_CONFIG` via the new `tierFromConfig()` helper (replacing the
+hardcoded `calcTier` ₱500/2k/5k/10k); `settings.js` `DEFAULT_TIERS` fallback aligned to
+the same ladder. (The Intelligence CRM already shows the server-computed `lifetime_tier`;
+if its edge-function ladder ever diverges from `TIER_CONFIG`, that’s a separate server
+follow-up.) Note: the live `TIER_CONFIG` value was **not** changed — only the code that
+reads it. The Operations “Clients” tab badges will now match Settings (most customers
+move toward Seedling vs the old ₱500/2k/5k/10k computation, as intended).
 
 There are **three** disagreeing tier ladders in play:
 - `utils.calcTier()` (used by `customers.js`): ₱500 / 2k / 5k / 10k.

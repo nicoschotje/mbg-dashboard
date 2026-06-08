@@ -30,17 +30,34 @@ export function escapeHTML(s) {
   }[c]));
 }
 
-// Blueprint §10.2 — auto tier from lifetime spent
-export function calcTier(lifetimeSpent) {
-  const v = Number(lifetimeSpent) || 0;
-  if (v >= 10000) return 5; // Diamond
-  if (v >= 5000)  return 4; // Gold
-  if (v >= 2000)  return 3; // Silver
-  if (v >= 500)   return 2; // Bronze
-  return 1;                  // Seedling
-}
+// Tier ladder — the single source of truth is dashboard_settings.TIER_CONFIG
+// (editable in Settings → Tier Configuration). DEFAULT_TIER_CONFIG mirrors the
+// owner's configured ladder and is used only as a fallback when TIER_CONFIG
+// can't be read. min_spend is the lifetime-spend (₱) floor for each tier level.
+export const DEFAULT_TIER_CONFIG = [
+  { tier_level: 1, name: 'Seedling', min_spend: 5000  },
+  { tier_level: 2, name: 'Bronze',   min_spend: 10000 },
+  { tier_level: 3, name: 'Silver',   min_spend: 15000 },
+  { tier_level: 4, name: 'Gold',     min_spend: 25000 },
+  { tier_level: 5, name: 'Diamond',  min_spend: 50000 },
+];
 
 export const TIER_NAMES = { 1: 'Seedling', 2: 'Bronze', 3: 'Silver', 4: 'Gold', 5: 'Diamond' };
+
+// Resolve a lifetime-spend amount to a tier LEVEL using TIER_CONFIG (the caller
+// loads it from dashboard_settings). The highest threshold the spend meets wins;
+// below the lowest threshold it floors to the lowest configured tier.
+export function tierFromConfig(lifetimeSpent, config) {
+  const v = Number(lifetimeSpent) || 0;
+  const ladder = (Array.isArray(config) && config.length ? config : DEFAULT_TIER_CONFIG)
+    .slice()
+    .sort((a, b) => (Number(a.min_spend) || 0) - (Number(b.min_spend) || 0));
+  let level = ladder[0]?.tier_level ?? 1;
+  for (const t of ladder) {
+    if (v >= (Number(t.min_spend) || 0)) level = t.tier_level;
+  }
+  return level;
+}
 
 // Blueprint §10.1 — order status pipeline
 export const STATUS_FLOW = ['pending', 'confirmed', 'preparing', 'out_for_delivery', 'completed'];
