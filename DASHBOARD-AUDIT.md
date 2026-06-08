@@ -174,7 +174,17 @@ backdoor removed, the Settings PIN-change should also write `admin_config` (or
 
 ## P0-3 — Secrets and customer PII are readable with the public anon key (RLS holes)
 
-**Type:** security · **Status:** 🔶 documented + remediation SQL provided (not auto-applied — tightening reads could affect the storefront)
+**Type:** security · **Status:** ✅ CRM + discount_codes locked down on live (2026-06-08);
+🔶 Telegram token columns pending (Step 3 — waits on storefront PR #26 + token rotation).
+
+**Done (verified live):** all 8 MBG CRM tables (`mbg_clients`, `mbg_client_intelligence`,
+`mbg_orders`, `mbg_order_enrichments`, `mbg_interactions`, `mbg_discounts`,
+`mbg_tier_history`, `mbg_import_log`) — SELECT changed from `USING (true)` →
+`USING (is_admin())` (migration `lock_down_mbg_crm_anon_read`). Plus `discount_codes`
+(empty, unused placeholder) → `is_admin()` (migration `lock_down_discount_codes_anon_read`).
+A `pg_policies` sweep confirms the only remaining public `USING(true)` SELECT policies are
+catalog/CMS/`store_settings` (intended public). Repo migration files added under
+`supabase/migrations/` to prevent drift.
 
 The anon key is public (it’s in `index.html` and the storefront — that part is fine).
 The problem is *what that key can read*:
