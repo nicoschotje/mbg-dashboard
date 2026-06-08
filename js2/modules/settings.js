@@ -31,12 +31,15 @@ function surgePillStyle(active) {
     : base + 'background:var(--bg-base);color:var(--text-muted);border:1px solid var(--border)';
 }
 
+// Fallback only — the live source of truth is dashboard_settings.TIER_CONFIG.
+// Aligned to the owner's configured ₱5k/10k/15k/25k/50k ladder so a fallback
+// never disagrees with what's saved.
 const DEFAULT_TIERS = [
-  { tier_level: 5, name: 'Diamond',  icon: '💎', color: '#9B59B6', min_spend: 10000 },
-  { tier_level: 4, name: 'Gold',     icon: '🥇', color: '#F39C12', min_spend: 5000  },
-  { tier_level: 3, name: 'Silver',   icon: '🥈', color: '#95A5A6', min_spend: 2000  },
-  { tier_level: 2, name: 'Bronze',   icon: '🥉', color: '#E67E22', min_spend: 500   },
-  { tier_level: 1, name: 'Seedling', icon: '🌱', color: '#27AE60', min_spend: 0     },
+  { tier_level: 5, name: 'Diamond',  icon: '💎', color: '#9B59B6', min_spend: 50000 },
+  { tier_level: 4, name: 'Gold',     icon: '🥇', color: '#F39C12', min_spend: 25000 },
+  { tier_level: 3, name: 'Silver',   icon: '🥈', color: '#95A5A6', min_spend: 15000 },
+  { tier_level: 2, name: 'Bronze',   icon: '🥉', color: '#E67E22', min_spend: 10000 },
+  { tier_level: 1, name: 'Seedling', icon: '🌱', color: '#27AE60', min_spend: 5000  },
 ];
 
 // QR code upload targets — each maps a payment method to its store_settings

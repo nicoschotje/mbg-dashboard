@@ -17,7 +17,7 @@ let modalBody = null;
 const filterState = {
   status: 'all',          // all | pending | confirmed | preparing | out_for_delivery | completed | cancelled
   dateRange: 'today',     // today | yesterday | week | all | custom
-  payment: 'all',         // all | gcash | maya | bank_transfer | usdt | cod
+  payment: 'all',         // all | gcash | maya | bank_transfer | usdt
   search: '',
   customStart: null,
   customEnd: null,
@@ -572,7 +572,6 @@ function buildPane() {
         <option value="maya">Maya</option>
         <option value="bank_transfer">Bank transfer</option>
         <option value="usdt">USDT</option>
-        <option value="cod">COD (legacy)</option>
       </select>
       <button class="btn btn-ghost btn-sm" id="orders-refresh">Refresh</button>
     </div>

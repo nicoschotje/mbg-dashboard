@@ -100,7 +100,10 @@ async function loadAll() {
       .gte('created_at', bounds.start.toISOString())
       .lte('created_at', bounds.end.toISOString())
       .order('created_at', { ascending: true }),
-    sb.from('orders').select('id, created_at, total, subtotal, order_status, customer_phone')
+    // Previous period must select the SAME columns as the current period —
+    // especially `items` — or its COGS computes as 0, making the "vs previous
+    // period" Profit and Margin deltas meaningless (prev profit ≈ prev revenue).
+    sb.from('orders').select(cols)
       .gte('created_at', prev.start.toISOString())
       .lte('created_at', prev.end.toISOString()),
     sb.from('products').select('id, name, cost_price, price, category_id'),
@@ -112,7 +115,8 @@ async function loadAll() {
   }
 
   // Categories — for byCategory grouping
-  const { data: categories } = await sb.from('categories').select('id, name');
+  const { data: categories, error: catErr } = await sb.from('categories').select('id, name');
+  if (catErr) console.warn('[analytics] categories load failed:', catErr.message);
   const catMap = {};
   (categories || []).forEach(c => { catMap[c.id] = c.name; });
 
@@ -131,8 +135,9 @@ async function loadAll() {
     catMap,
   }, prev, /*isPrev*/ true);
 
-  // Persist snapshot (§3.8 / §14.4 #4)
-  saveSnapshot().catch(() => { /* non-blocking */ });
+  // Persist snapshot (§3.8 / §14.4 #4). Non-blocking, but log on failure so a
+  // broken snapshot write isn't completely invisible.
+  saveSnapshot().catch((e) => console.warn('[analytics] snapshot save failed:', e?.message || e));
 }
 
 /* ---------- Compute (§12.2-§12.4) ---------- */

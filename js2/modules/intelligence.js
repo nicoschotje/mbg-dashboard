@@ -138,7 +138,7 @@ function renderDashboard() {
       ${Object.entries(tagCounts).length
         ? Object.entries(tagCounts).sort(([,a],[,b]) => b - a).map(([tag, n]) => `
           <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed var(--border);font-size:13px">
-            <span class="action-tag tag-${tag}">${ACTION_LABELS[tag] || tag}</span>
+            <span class="action-tag tag-${escapeHTML(tag)}">${escapeHTML(ACTION_LABELS[tag] || tag)}</span>
             <span style="font-family:'JetBrains Mono',monospace">${n}</span>
           </div>
         `).join('')
@@ -189,7 +189,7 @@ function renderList() {
                     <div style="color:var(--text-muted);font-size:11px">${escapeHTML(c.telegram_username || '')}</div>
                   </td>
                   <td>${escapeHTML(c.lifetime_tier || '—')}</td>
-                  <td>${c.action_tag ? `<span class="action-tag tag-${c.action_tag}">${ACTION_LABELS[c.action_tag] || c.action_tag}</span>` : '—'}</td>
+                  <td>${c.action_tag ? `<span class="action-tag tag-${escapeHTML(c.action_tag)}">${escapeHTML(ACTION_LABELS[c.action_tag] || c.action_tag)}</span>` : '—'}</td>
                   <td style="font-family:'JetBrains Mono',monospace">${c.lifetime_score || 0}</td>
                   <td style="font-family:'JetBrains Mono',monospace">${formatCurrency(c.lifetime_spend)}</td>
                   <td style="font-family:'JetBrains Mono',monospace">${c.lifetime_order_count || 0}</td>
@@ -228,12 +228,14 @@ function renderDetail() {
 async function openClientDetail(c) {
   // Load order history
   const sb = getSB();
-  const { data: orders } = await sb
+  const { data: orders, error: ordErr } = await sb
     .from('mbg_orders')
     .select('id, order_date, amount, status, notes')
     .eq('client_id', c.id)
     .order('order_date', { ascending: false })
     .limit(50);
+  // Surface the failure in the console instead of silently showing "No orders".
+  if (ordErr) console.warn('[intelligence] client order history load failed:', ordErr.message);
 
   const margin = c.lifetime_profit_margin != null ? c.lifetime_profit_margin : c.profit_margin;
 
@@ -254,7 +256,7 @@ async function openClientDetail(c) {
       ${c.action_tag ? `
         <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
           <div class="kpi-label">Recommended action</div>
-          <div style="margin-top:6px"><span class="action-tag tag-${c.action_tag}">${ACTION_LABELS[c.action_tag] || c.action_tag}</span></div>
+          <div style="margin-top:6px"><span class="action-tag tag-${escapeHTML(c.action_tag)}">${escapeHTML(ACTION_LABELS[c.action_tag] || c.action_tag)}</span></div>
           <div style="color:var(--text-muted);font-size:13px;margin-top:6px">${escapeHTML(ACTION_DESCRIPTIONS[c.action_tag] || c.behavior_tag_description || '')}</div>
         </div>
       ` : ''}

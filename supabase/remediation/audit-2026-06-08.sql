@@ -1,0 +1,143 @@
+-- ============================================================================
+-- MBG Dashboard — security remediation SQL (audit 2026-06-08)
+--
+-- ⚠️  DO NOT run this blindly, and DO NOT drop it into supabase/migrations/.
+--     It is intentionally OUTSIDE the migrations folder so `supabase db push`
+--     will not auto-apply it. Each block touches LIVE auth or data that the
+--     storefront may share. Read the comment above each block, run the
+--     verification query first, then apply deliberately.
+--
+-- Project: ihnnipynpdtcbdfbpemq
+-- See DASHBOARD-AUDIT.md (P0-1, P0-2, P0-3, P0-4) for full context.
+-- ============================================================================
+
+
+-- ----------------------------------------------------------------------------
+-- P0-1 / P0-2 — STATUS: partially applied 2026-06-08.
+--
+-- DONE (safe, no live disruption — admin_config left intact so the old live
+-- code's 123456 login keeps working until the new auth.js ships):
+--   * dashboard_settings.OWNER_PIN_HASH  -> sha256('<new owner PIN>')
+--   * dashboard_settings.SALES_PIN_HASH  -> sha256('<new sales PIN>')
+--   * new RPC public.verify_sales_pin(...) (see supabase/migrations/)
+--   * js2/core/auth.js now verifies server-side via verify_owner_pin /
+--     verify_sales_pin and no longer falls back to 123456 / 1234.
+--
+-- STEP C — RUN THIS ONLY AFTER the new auth.js is merged to main and live.
+-- It removes the admin_config branch from is_admin(): that branch pinned a
+-- stale sha256('123456') master key that survived every PIN change (P0-1) and
+-- made Settings PIN changes ineffective (P0-2). After this, is_admin() trusts
+-- only (a) a valid admin_sessions token or (b) x-admin-secret matching the
+-- CURRENT OWNER_PIN_HASH — so changing the owner PIN fully rotates admin.
+--
+-- ⚠️  Running this BEFORE the new code is live will break the live owner's
+--     writes (the old code logs in with 123456 and relies on admin_config).
+-- ----------------------------------------------------------------------------
+-- CREATE OR REPLACE FUNCTION public.is_admin()
+--  RETURNS boolean
+--  LANGUAGE plpgsql
+--  STABLE SECURITY DEFINER
+--  SET search_path TO 'public', 'extensions', 'pg_temp'
+-- AS $function$
+-- DECLARE
+--   v_secret text; v_token text; v_hash text; v_stored text; v_token_hash text;
+-- BEGIN
+--   -- 1) admin session token (issued by verify_owner_pin)
+--   BEGIN
+--     v_token := current_setting('request.headers', true)::json->>'x-admin-token';
+--   EXCEPTION WHEN OTHERS THEN v_token := NULL; END;
+--   IF v_token IS NOT NULL AND length(v_token) >= 32 THEN
+--     v_token_hash := encode(digest(v_token, 'sha256'), 'hex');
+--     PERFORM 1 FROM public.admin_sessions
+--       WHERE token_hash = v_token_hash AND is_valid = true AND expires_at > now() LIMIT 1;
+--     IF FOUND THEN RETURN true; END IF;
+--   END IF;
+--   -- 2) x-admin-secret must equal the CURRENT owner PIN hash (no admin_config!)
+--   BEGIN
+--     v_secret := current_setting('request.headers', true)::json->>'x-admin-secret';
+--   EXCEPTION WHEN OTHERS THEN RETURN false; END;
+--   IF v_secret IS NULL OR v_secret = '' THEN RETURN false; END IF;
+--   v_hash := encode(digest(v_secret, 'sha256'), 'hex');
+--   SELECT value INTO v_stored FROM public.dashboard_settings WHERE key = 'OWNER_PIN_HASH' LIMIT 1;
+--   IF v_stored IS NOT NULL AND v_stored = v_hash THEN RETURN true; END IF;
+--   RETURN false;
+-- END;
+-- $function$;
+--
+-- Optional belt-and-suspenders (also kills the value, not just the code path):
+--   -- UPDATE public.admin_config SET admin_secret_hash = NULL, updated_at = now() WHERE id = 1;
+
+
+-- ----------------------------------------------------------------------------
+-- P0-3b — Stop the public anon key from reading the customer CRM.
+--
+-- mbg_clients (23 rows) and mbg_client_intelligence (208 rows) currently allow
+-- anon SELECT with USING (true). Restrict to is_admin(). The dashboard reads
+-- these while logged in as owner (is_admin() = true via the x-admin-secret
+-- header), so it keeps working. The storefront almost certainly does NOT read
+-- them — VERIFY that first.
+--
+-- Verify nothing anonymous depends on these (run as the anon role / from the
+-- storefront) BEFORE applying. Then:
+-- ----------------------------------------------------------------------------
+-- ALTER POLICY "Allow anon read mbg_clients"
+--   ON public.mbg_clients USING (is_admin());
+-- ALTER POLICY "Allow anon read mbg_client_intelligence"
+--   ON public.mbg_client_intelligence USING (is_admin());
+
+
+-- ----------------------------------------------------------------------------
+-- P0-3a — Telegram bot token is readable by the public anon key.
+--
+-- store_settings has SELECT USING (true) for `public`, and the row contains
+-- telegram_bot_token + telegram_chat_id. There is NO clean one-liner here:
+-- every dashboard/storefront request is the `anon` DB role (owner is only
+-- distinguished by is_admin() at the RLS row level, which cannot hide a
+-- COLUMN). So column-level REVOKE would break the storefront too.
+--
+-- Recommended (requires a small storefront change, coordinate first):
+--   1. Create a public view exposing ONLY the branding/payment-display columns
+--      (no token), and point the storefront + dashboard pre-login read at it:
+--
+--      CREATE VIEW public.store_settings_public AS
+--        SELECT id, store_name, store_tagline, store_phone, store_email,
+--               store_address, store_logo_url, banner_url, theme_color,
+--               operating_hours, is_open, store_online, delivery_fee,
+--               free_delivery_min, free_delivery_enabled, min_order_amount,
+--               delivery_rate_multiplier,
+--               gcash_enabled, maya_enabled, crypto_enabled, crypto_usdt_network
+--               -- (NO telegram_bot_token, NO telegram_chat_id, NO raw account #s you want private)
+--          FROM public.store_settings;
+--      GRANT SELECT ON public.store_settings_public TO anon, authenticated;
+--
+--   2. Keep base-table SELECT for is_admin() only:
+--      ALTER POLICY settings_public_read ON public.store_settings USING (is_admin());
+--      -- (and drop/!replace the duplicate allow_read_store_settings policy)
+--
+--   3. Best: move telegram_bot_token out of the DB entirely into the
+--      notify-customer / telegram-* Edge Function secrets (it doesn't need to
+--      live in a client-readable table at all).
+--
+-- This is left as a documented recommendation, NOT applied, because it needs
+-- the storefront updated in lockstep.
+
+
+-- ----------------------------------------------------------------------------
+-- P0-4 — auth_audit_log accepts anonymous inserts (WORM table can be spammed).
+--
+-- Policy audit_anon_insert is INSERT WITH CHECK (true) for anon. Audit writes
+-- should go only through SECURITY DEFINER RPCs. Tightening this could break a
+-- login/verify flow that inserts as anon — verify the verify_* RPCs are
+-- SECURITY DEFINER (they are) and do the inserts themselves, then:
+--   -- DROP POLICY audit_anon_insert ON public.auth_audit_log;
+-- Leave SELECT denied to anon (it already is). Documented, not applied.
+
+
+-- ----------------------------------------------------------------------------
+-- P0-4 (advisors) — function_search_path_mutable on:
+--   public.sync_order_status_columns, public.increment_discount_uses
+-- Add a fixed search_path to each (defensive against search_path attacks):
+--   ALTER FUNCTION public.sync_order_status_columns() SET search_path = public, pg_temp;
+--   ALTER FUNCTION public.increment_discount_uses(uuid) SET search_path = public, pg_temp;
+-- Safe to apply.
+-- ----------------------------------------------------------------------------
